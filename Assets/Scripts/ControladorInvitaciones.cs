@@ -3,25 +3,52 @@ using TMPro;
 
 public class ControladorInvitaciones : MonoBehaviour
 {
-    [Header("UI del Panel")]
-    public GameObject panelVentanaMensaje;       // Arrastra aquí tu objeto "VentanaMensaje"
-    public TextMeshProUGUI textoMensaje;          // Arrastra aquí el componente TextMeshPro del mensaje
+    // Instancia estática para que otros scripts (como jugadorPrefab) puedan llamarlo fácilmente
+    public static ControladorInvitaciones Instance;
 
-    private string idJugadorObjetivo;             // El ID del jugador al que vamos a invitar
+    [Header("UI del Panel de Invitación")]
+    public GameObject panelVentanaMensaje;       // Arrastra aquí "VentanaMensaje"
+    public TextMeshProUGUI textoMensaje;          // Arrastra aquí "TextoMensaje"
+
+    [Header("UI de Cambio de Panel al Jugar")]
+    public GameObject panelLobby;                 
+    public GameObject panelJuego;                 
+    public GestorTablero gestorTablero;           
+
+    private string idJugadorObjetivo;             
+
+    void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+    }
 
     void Start()
     {
-        // Asegurarnos de que el panel arranque apagado al iniciar la escena
         if (panelVentanaMensaje != null)
         {
             panelVentanaMensaje.SetActive(false);
         }
+
+        StartCoroutine(ConectarEventosSocketConRetraso());
     }
 
-    // Método para abrir la ventana y poner el nombre del jugador seleccionado
+    System.Collections.IEnumerator ConectarEventosSocketConRetraso()
+    {
+        while (ControladorJuego.Instance == null || ControladorJuego.Instance.socket == null)
+        {
+            yield return null;
+        }
+
+        EscucharEventosSocketPareja();
+        Debug.Log("Eventos de socket en pareja suscritos correctamente.");
+    }
+
+    // Método que abre la ventana con el nombre y el ID correcto
     public void AbrirVentanaInvitacion(string idJugador, string nombreJugador)
     {
         idJugadorObjetivo = idJugador;
+        Debug.Log($"Abriendo ventana para ID: {idJugadorObjetivo}, Nombre: {nombreJugador}");
 
         if (textoMensaje != null)
         {
@@ -30,35 +57,88 @@ public class ControladorInvitaciones : MonoBehaviour
 
         if (panelVentanaMensaje != null)
         {
-            panelVentanaMensaje.SetActive(true); // Muestra el panel en pantalla
+            panelVentanaMensaje.SetActive(true);
         }
     }
 
-    // Método que se ejecuta cuando haces clic en el botón "Aceptar"
-    // Método que se ejecuta cuando haces clic en el botón "Aceptar"
-    // Método que se ejecuta cuando haces clic en el botón "Aceptar"
+    // Método que se ejecuta al hacer clic en el botón "Aceptar"
+   // Método que se ejecuta al hacer clic en el botón "Aceptar"
     public void EnviarInvitacionConfirmada()
     {
-        if (ControladorJuego.Instance != null)
+        Debug.Log($"Enviando invitación al servidor para el jugador ID: {idJugadorObjetivo}");
+
+        if (ControladorJuego.Instance != null && ControladorJuego.Instance.socket != null)
         {
-            string idLimpio = !string.IsNullOrEmpty(idJugadorObjetivo) ? idJugadorObjetivo : "1";
-
-            Debug.Log($"---> Enviando ID emisor limpio a Node.js: {idLimpio}");
-
-            // Enviamos un objeto anónimo directo. Socket.io lo serializará perfectamente como { "idEmisor": "valor" }
-            var datos = new { idEmisor = idLimpio };
-
-            ControladorJuego.Instance.socket.Emit("aceptar_invitacion", datos);
+            var datos = new { 
+                idJugadorEmisor = ControladorJuego.Instance.id_player,
+                idJugadorReceptor = idJugadorObjetivo,
+                nombreEmisor = ControladorJuego.Instance.nombre_jugador
+            };
+            
+            ControladorJuego.Instance.socket.Emit("enviar_invitacion", datos);
+        }
+        else
+        {
+            Debug.LogError("No se pudo enviar: El socket de ControladorJuego es nulo.");
         }
 
         CerrarVentana();
     }
-    // Método para cerrar o cancelar la ventana
+    // Método que se ejecuta al hacer clic en el botón "Volver" o al finalizar
     public void CerrarVentana()
     {
         if (panelVentanaMensaje != null)
         {
             panelVentanaMensaje.SetActive(false);
+            Debug.Log("Ventana de mensaje cerrada.");
         }
+    }
+
+    void EscucharEventosSocketPareja()
+    {
+        if (ControladorJuego.Instance == null || ControladorJuego.Instance.socket == null) return;
+
+        ControladorJuego.Instance.socket.OnUnityThread("iniciar_partida", (response) =>
+        {
+            try
+            {
+                Debug.Log("--- PARTIDA MULTIJUGADOR INICIADA ---");
+                string rawJson = response != null ? response.ToString() : "";
+                DatosPartidaRespuesta respuesta = null;
+
+                try
+                {
+                    respuesta = Newtonsoft.Json.JsonConvert.DeserializeObject<DatosPartidaRespuesta>(rawJson);
+                }
+                catch
+                {
+                    var tokenArray = Newtonsoft.Json.Linq.JArray.Parse(rawJson);
+                    if (tokenArray.Count > 0)
+                    {
+                        respuesta = tokenArray[0].ToObject<DatosPartidaRespuesta>();
+                    }
+                }
+
+                if (respuesta != null)
+                {
+                    if (panelLobby != null) panelLobby.SetActive(false);
+                    if (panelJuego != null) panelJuego.SetActive(true);
+
+                    if (gestorTablero != null)
+                    {
+                        gestorTablero.ConfigurarTablero(respuesta.fichas);
+
+                        if (respuesta.fichas.Count > 0)
+                        {
+                            gestorTablero.CargarNuevaPalabra(respuesta.fichas[0].traduccion);
+                        }
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError("Error al procesar 'iniciar_partida': " + e.ToString());
+            }
+        });
     }
 }

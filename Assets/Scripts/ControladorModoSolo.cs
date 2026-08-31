@@ -7,8 +7,8 @@ public class ControladorModoSolo : MonoBehaviour
     [Header("UI y Referencias")]
     public Button botonModoSolo;         // Arrastra tu botón del Lobby aquí
     public GestorTablero gestorTablero;    // Arrastra el objeto que tiene el script GestorTablero
-    public GameObject panelLobby;        // El panel actual del lobby para ocultarlo
-    public GameObject panelJuego;        // El panel de la matriz 5x4 para mostrarlo
+    public GameObject panelLobby;         // El panel actual del lobby para ocultarlo
+    public GameObject panelJuego;         // El panel de la matriz para mostrarlo
 
     void Start()
     {
@@ -33,15 +33,20 @@ public class ControladorModoSolo : MonoBehaviour
         Debug.Log("Eventos de socket suscritos correctamente en ControladorModoSolo.");
     }
 
-    void SolicitarModoIndividual()
+    public void SolicitarModoIndividual()
     {
-        Debug.Log("Enviando petición 'iniciar_modo_solo' al servidor...");
+        // Indicamos que NO estamos en modo multijugador
+        if (ControladorJuego.Instance != null)
+        {
+            ControladorJuego.Instance.esModoMultijugador = false;
+        }
 
-        // Verificamos que el ControladorJuego y su socket existan y estén conectados
+        Debug.Log("Enviando petición 'iniciar_modo_solo' para el nivel: " + gestorTablero.nivelActual);
+
         if (ControladorJuego.Instance != null && ControladorJuego.Instance.socket != null)
         {
-            // Emitimos el evento exactamente como lo recibe tu servidor Node.js
-            ControladorJuego.Instance.socket.Emit("iniciar_modo_solo");
+            var datosPeticion = new { nivel = gestorTablero.nivelActual };
+            ControladorJuego.Instance.socket.Emit("iniciar_modo_solo", datosPeticion);
         }
         else
         {
@@ -53,20 +58,17 @@ public class ControladorModoSolo : MonoBehaviour
     {
         if (ControladorJuego.Instance == null || ControladorJuego.Instance.socket == null) return;
 
-        // Escuchamos el evento de inicio de partida que viene del servidor
         ControladorJuego.Instance.socket.OnUnityThread("iniciar_partida", (response) =>
         {
             try
             {
                 Debug.Log("--- EVENTO INICIAR_PARTIDA RECIBIDO ---");
 
-                // 1. Ver el JSON crudo que manda Node.js
                 string rawJson = response != null ? response.ToString() : "RESPONSE ES NULO";
                 Debug.Log("JSON Crudo recibido: " + rawJson);
 
                 DatosPartidaRespuesta respuesta = null;
 
-                // Deserializamos manejando el formato de Socket.IO igual que en tu ControladorJuego
                 try
                 {
                     respuesta = Newtonsoft.Json.JsonConvert.DeserializeObject<DatosPartidaRespuesta>(rawJson);
@@ -87,7 +89,22 @@ public class ControladorModoSolo : MonoBehaviour
                 {
                     Debug.Log($"Datos parseados -> Nivel: {respuesta.nivel} | Total Parejas: {respuesta.total_parejas}");
 
-                    // CORREGIDO: Ahora validamos 'fichas' en lugar de 'configuracion'
+                    // --- CONFIGURACIÓN DE MULTIJUGADOR O MODO SOLO ---
+                    if (!string.IsNullOrEmpty(respuesta.nombreSala))
+                    {
+                        ControladorJuego.Instance.nombreSalaActual = respuesta.nombreSala;
+                        ControladorJuego.Instance.turnoActual = respuesta.turnoActual;
+                        ControladorJuego.Instance.esModoMultijugador = true;
+
+                        Debug.Log($"👥 [MULTIJUGADOR ACTIVO] Sala: {respuesta.nombreSala} | Turno Inicial: {respuesta.turnoActual}");
+                    }
+                    else
+                    {
+                        ControladorJuego.Instance.esModoMultijugador = false;
+                        Debug.Log("👤 [MODO SOLO ACTIVO]");
+                    }
+                    // ------------------------------------------------
+
                     if (respuesta.fichas != null)
                     {
                         Debug.Log($"¡La lista 'fichas' NO es nula! Contiene {respuesta.fichas.Count} elementos.");
@@ -105,6 +122,12 @@ public class ControladorModoSolo : MonoBehaviour
                     if (gestorTablero != null)
                     {
                         gestorTablero.ConfigurarTablero(respuesta.fichas);
+
+                        // 3. Cargamos la primera traducción disponible al iniciar el nivel (si hay elementos)
+                        if (respuesta.fichas != null && respuesta.fichas.Count > 0)
+                        {
+                            gestorTablero.CargarNuevaPalabra(respuesta.fichas[0].traduccion);
+                        }
                     }
                     else
                     {
@@ -118,11 +141,10 @@ public class ControladorModoSolo : MonoBehaviour
             }
             catch (System.Exception e)
             {
-                Debug.LogError("Error al procesar 'iniciar_partida' en modo solo: " + e.ToString());
+                Debug.LogError("Error al procesar 'iniciar_partida': " + e.ToString());
             }
         });
 
-        //------
         ControladorJuego.Instance.socket.OnUnityThread("error_partida", (response) =>
         {
             Debug.LogError("Error recibido del servidor: " + response.ToString());
@@ -133,7 +155,19 @@ public class ControladorModoSolo : MonoBehaviour
 [System.Serializable]
 public class DatosPartidaRespuesta
 {
+    public string turnoActual;
+    public string nombreSala;
     public int nivel;
     public int total_parejas;
     public List<ItemNivelRespuesta> fichas;
+}
+
+[System.Serializable]
+public class ItemNivelRespuesta
+{
+    public int id;
+    public string texto;
+    public string audio;
+    public string traduccion;
+    public int indice_posicion;
 }

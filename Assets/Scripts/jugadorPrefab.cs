@@ -13,7 +13,6 @@ public class jugadorPrefab : MonoBehaviour
     private string nombreJugadorActual; // Guardamos el nombre del jugador de este renglón
 
     // Método que se llama desde el administrador del lobby para configurar cada ranura
-    // (Añadimos 'string id' para recibir también el identificador único)
     public void Inicializar(string id, string nombre, string avatarUrl)
     {
         idJugadorActual = id;
@@ -24,7 +23,7 @@ public class jugadorPrefab : MonoBehaviour
             textoNombre.text = nombre;
         }
 
-        if (!string.IsNullOrEmpty(avatarUrl))
+        if (!string.IsNullOrEmpty(avatarUrl) && gameObject.activeInHierarchy)
         {
             StartCoroutine(DescargarAvatar(avatarUrl));
         }
@@ -33,19 +32,19 @@ public class jugadorPrefab : MonoBehaviour
     // Este es el método que se ejecutará cuando hagas clic en este renglón de la lista
     public void AlHacerClicEnJugador()
     {
-        Debug.Log($"Hizo clic en el jugador: {nombreJugadorActual}");
+        Debug.Log($"Hizo clic en el jugador: {nombreJugadorActual} con ID: {idJugadorActual}");
 
-        // Buscamos el gestor de invitaciones en la escena
-        ControladorInvitaciones gestor = FindObjectOfType<ControladorInvitaciones>();
+        // Buscamos el ControladorModoPareja en lugar del de invitaciones
+        ControladorModoPareja gestorPareja = Object.FindFirstObjectByType<ControladorModoPareja>();
 
-        if (gestor != null)
+        if (gestorPareja != null)
         {
             // Abrimos la ventana pasándole su ID y su nombre real
-            gestor.AbrirVentanaInvitacion(idJugadorActual, nombreJugadorActual);
+            gestorPareja.AbrirVentanaInvitacion(idJugadorActual, nombreJugadorActual);
         }
         else
         {
-            Debug.LogWarning("No se encontró el componente ControladorInvitaciones en la escena.");
+            Debug.LogWarning("No se encontró el componente ControladorModoPareja en la escena.");
         }
     }
 
@@ -55,10 +54,13 @@ public class jugadorPrefab : MonoBehaviour
         {
             yield return www.SendWebRequest();
 
+            // Verificamos que el GameObject siga activo en la escena antes de procesar el resultado
+            if (!this || !gameObject.activeInHierarchy) yield break;
+
             if (www.result == UnityWebRequest.Result.Success)
             {
                 Texture2D textura = DownloadHandlerTexture.GetContent(www);
-                if (imagenAvatar != null)
+                if (imagenAvatar != null && textura != null)
                 {
                     imagenAvatar.texture = textura;
                 }

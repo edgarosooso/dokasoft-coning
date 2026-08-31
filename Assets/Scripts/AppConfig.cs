@@ -1,19 +1,3 @@
-// using UnityEngine;
-
-// public class AppConfig : MonoBehaviour
-// {
-//     // URLs base de tu servidor
-//     public static string BaseURL = "https://dokasoft.com/dokasoft-coning/api";
-//     public static string socketURL = "http://dokasoft.com:3010"; // O tu IP/dominio para producción
-
-//     // Método para obtener cualquier ruta limpiamente
-//     public static string ObtenerUrl(string endpoint)
-//     {
-//         // Limpiamos posibles barras iniciales en el endpoint para evitar duplicados
-//         endpoint = endpoint.TrimStart('/');
-//         return $"{BaseURL}/{endpoint}";
-//     }
-// }
 
 using UnityEngine;
 

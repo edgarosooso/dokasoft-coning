@@ -4,25 +4,25 @@ using TMPro;
 
 public class ControladorFicha : MonoBehaviour
 {
+    public int indiceEnTablero;
     private Button botonFicha;
     private TextMeshProUGUI textoFicha;
+    public string traduccionFicha;
 
     [Header("Referencias Visuales")]
     [Tooltip("Arrastra aquí el objeto hijo 'FondoVisual' desde el inspector de Unity")]
-    public GameObject fondoVisual; // 👈 Referencia a la cajita de neón
+    public GameObject fondoVisual;
 
     public int idFicha;
     public string textoPalabra;
     public string rutaAudio;
-
-    private bool estaVolteada = false;
-    private bool estaEliminada = false; // Para evitar clics si ya se hizo pareja
+    public bool estaVolteada = false;
+    public bool estaEliminada = false;
 
     void Awake()
     {
         botonFicha = GetComponent<Button>();
 
-        // Si no asignaste el fondo visual a mano, lo busca automáticamente en los hijos
         if (fondoVisual == null && transform.childCount > 0)
         {
             Transform hijoFondo = transform.Find("FondoVisual");
@@ -38,14 +38,17 @@ public class ControladorFicha : MonoBehaviour
         }
     }
 
-    public void ConfigurarFicha(int id, string texto, string audio)
+    public void ConfigurarFicha(int id, string texto, string audio, string traduccion, int indicePos)
     {
         idFicha = id;
         textoPalabra = texto;
         rutaAudio = audio;
+        traduccionFicha = traduccion;
+        indiceEnTablero = indicePos; // 👈 Unificado correctamente aquí
+
         estaEliminada = false;
 
-        if (fondoVisual != null) fondoVisual.SetActive(true); // Asegura que se vea al reiniciar
+        if (fondoVisual != null) fondoVisual.SetActive(true);
         OcultarFicha();
     }
 
@@ -53,13 +56,28 @@ public class ControladorFicha : MonoBehaviour
     {
         if (estaEliminada || estaVolteada) return;
 
-        Debug.Log("¡CLIC EXITOSO EN LA FICHA: " + textoPalabra + "!");
+        Debug.Log("¡CLIC EXITOSO EN LA FICHA: " + textoPalabra + " (Índice: " + indiceEnTablero + ")!");
 
         RevelarFicha();
 
         if (!string.IsNullOrEmpty(rutaAudio))
         {
             GestorTablero.Instance.ReproducirAudioDeFila(rutaAudio);
+        }
+
+        if (ControladorJuego.Instance != null && ControladorJuego.Instance.esModoMultijugador)
+        {
+            var datosClic = new
+            {
+                nombreSala = ControladorJuego.Instance.nombreSalaActual,
+                indiceFicha = indiceEnTablero,
+                idJugador = ControladorJuego.Instance.id_player
+            };
+
+            if (ControladorJuego.Instance.socket != null)
+            {
+                ControladorJuego.Instance.socket.Emit("procesar_clic_ficha", datosClic);
+            }
         }
 
         if (GestorTablero.Instance != null)
@@ -76,40 +94,64 @@ public class ControladorFicha : MonoBehaviour
             textoFicha.text = textoPalabra;
         }
 
-        // Oculta el cuadro al revelar la ficha
         if (fondoVisual != null)
         {
             fondoVisual.SetActive(false);
         }
     }
 
-   public void OcultarFicha()
-{
-    estaVolteada = false;
-    
-    if (textoFicha != null)
+    public void RevelarFichaRemota()
     {
-        textoFicha.text = "";
+        if (estaEliminada || estaVolteada) return;
+
+        RevelarFicha();
+
+        if (!string.IsNullOrEmpty(rutaAudio) && GestorTablero.Instance != null)
+        {
+            GestorTablero.Instance.ReproducirAudioDeFila(rutaAudio);
+        }
     }
 
-    if (fondoVisual != null)
-    {
-        fondoVisual.SetActive(true); // Vuelve a mostrar el cuadro con seguridad
-    }
-}
 
-    // 🌟 NUEVO MÉTODO: Llamar a esto desde tu GestorTablero cuando hagan pareja con éxito
+
+    public void OcultarFicha()
+    {
+        // Esto se usa exclusivamente cuando fallan y vuelven a quedar boca abajo
+        if (estaEliminada) return; // Si ya fue encontrada, no la toques
+
+        estaVolteada = false;
+
+        if (textoFicha != null)
+        {
+            textoFicha.text = "";
+        }
+
+        if (fondoVisual != null)
+        {
+            fondoVisual.SetActive(true);
+        }
+    }
+
     public void MarcarComoEncontrada()
     {
         estaEliminada = true;
 
         if (botonFicha != null)
-            botonFicha.interactable = false; // Desactiva el botón para que no se pueda volver a presionar
+        {
+            botonFicha.interactable = false;
+            var imgBot = botonFicha.GetComponent<Image>();
+            if (imgBot != null) imgBot.enabled = false;
+        }
 
         if (textoFicha != null)
-            textoFicha.text = ""; // Limpia el texto
+            textoFicha.text = "";
 
         if (fondoVisual != null)
-            fondoVisual.SetActive(false); // 👈 ¡Aquí se oculta limpiamente la cajita de neón!
+            fondoVisual.SetActive(false);
+
+        // Apagamos el objeto por completo para que desaparezca de la matriz del juego
+       // gameObject.SetActive(false);
     }
+
+
 }
