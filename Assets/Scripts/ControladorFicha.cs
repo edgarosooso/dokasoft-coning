@@ -56,9 +56,24 @@ public class ControladorFicha : MonoBehaviour
     {
         if (estaEliminada || estaVolteada) return;
 
+        // 🛑 VALIDACIÓN DE TURNO EN MULTIJUGADOR
+        if (ControladorJuego.Instance != null && ControladorJuego.Instance.esModoMultijugador)
+        {
+            // Comparamos si el ID del jugador actual es diferente al turno actual registrado
+            if (ControladorJuego.Instance.turnoActual != ControladorJuego.Instance.id_player.ToString())
+            {
+                Debug.Log("⏳ No es tu turno, espera a que juegue el rival.");
+                return; // Bloquea por completo el clic si no le corresponde jugar
+            }
+        }
+
         Debug.Log("¡CLIC EXITOSO EN LA FICHA: " + textoPalabra + " (Índice: " + indiceEnTablero + ")!");
 
         RevelarFicha();
+
+Debug.Log("¡RUTA DE ARCIVO " + rutaAudio  );
+
+
 
         if (!string.IsNullOrEmpty(rutaAudio))
         {
@@ -150,7 +165,7 @@ public class ControladorFicha : MonoBehaviour
             fondoVisual.SetActive(false);
 
         // Apagamos el objeto por completo para que desaparezca de la matriz del juego
-       // gameObject.SetActive(false);
+        // gameObject.SetActive(false);
     }
 
 

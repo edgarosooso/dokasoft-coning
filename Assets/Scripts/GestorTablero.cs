@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 using UnityEngine.UI;
+using UnityEngine.Serialization;
 
 public class GestorTablero : MonoBehaviour
 {
@@ -11,7 +12,7 @@ public class GestorTablero : MonoBehaviour
     [Header("Panel de Traducción")]
     public GameObject panelTraduccionObjeto;
     public TextMeshProUGUI textoTraduccionPanel;
-    public float tiempoVisiblePanel = 4f;
+    public float tiempoVisiblePanel = 2f;
 
     public static GestorTablero Instance;
     public int nivelActual = 1;
@@ -23,7 +24,9 @@ public class GestorTablero : MonoBehaviour
     private bool estaRevelado = false;
 
     [Header("Referencias de Victoria / Siguiente Nivel")]
-    public GameObject panelNivelCompletado;
+    [FormerlySerializedAs("panelNivelCompletado")]
+    public GameObject panelVictoria;
+    public GameObject panelVictoriaIndividual;
     private int parejasEncontradas = 0;
     private int totalParejasDelNivel = 0;
 
@@ -36,6 +39,7 @@ public class GestorTablero : MonoBehaviour
     public GameObject prefabCuadro;
 
     private bool bloqueandoClics = false;
+    private ControladorFicha primeraFichaLocal;
 
     void Awake()
     {
@@ -159,8 +163,19 @@ public class GestorTablero : MonoBehaviour
 
     public void ConfigurarTablero(List<ItemNivelRespuesta> listaFichas)
     {
-        if (listaFichas == null) return;
-        if (contenedorMatriz == null || prefabCuadro == null) return;
+        if (listaFichas == null)
+        {
+            Debug.LogError("iniciar_partida recibió fichas nulas.");
+            return;
+        }
+        if (contenedorMatriz == null)
+            contenedorMatriz = GameObject.Find("ContenedorMatriz")?.transform;
+        if (contenedorMatriz == null || prefabCuadro == null)
+        {
+            Debug.LogError($"No se puede crear el tablero. Contenedor={(contenedorMatriz != null)}, Prefab={(prefabCuadro != null)}");
+            return;
+        }
+        Debug.Log($"Configurando tablero con {listaFichas.Count} fichas.");
 
         foreach (Transform child in contenedorMatriz)
         {
@@ -168,15 +183,20 @@ public class GestorTablero : MonoBehaviour
         }
 
         bloqueandoClics = false;
+        primeraFichaLocal = null;
         parejasEncontradas = 0;
         totalParejasDelNivel = listaFichas.Count / 2;
 
-        if (panelNivelCompletado != null)
-            panelNivelCompletado.SetActive(false);
+        if (panelVictoria != null)
+            panelVictoria.SetActive(false);
+        if (panelVictoriaIndividual != null)
+            panelVictoriaIndividual.SetActive(false);
 
         for (int i = 0; i < listaFichas.Count; i++)
         {
             var ficha = listaFichas[i];
+            if (ficha.id == 0 && ficha.fichaid != 0) ficha.id = ficha.fichaid;
+            if (string.IsNullOrEmpty(ficha.audio)) ficha.audio = ficha.ruta_audio;
             GameObject nuevoCuadro = Instantiate(prefabCuadro, contenedorMatriz);
             nuevoCuadro.transform.localScale = Vector3.one;
 
@@ -213,6 +233,12 @@ public class GestorTablero : MonoBehaviour
 
         ficha.RevelarFicha();
 
+        if (!esMultijugadorReal)
+        {
+            ProcesarSeleccionLocal(ficha);
+            return;
+        }
+
         if (esMultijugadorReal)
         {
             int indiceFicha = ficha.indiceEnTablero;
@@ -234,6 +260,45 @@ public class GestorTablero : MonoBehaviour
         }
     }
 
+    private void ProcesarSeleccionLocal(ControladorFicha ficha)
+    {
+        if (primeraFichaLocal == null)
+        {
+            primeraFichaLocal = ficha;
+            return;
+        }
+
+        ControladorFicha primeraFicha = primeraFichaLocal;
+        ControladorFicha segundaFicha = ficha;
+        primeraFichaLocal = null;
+        bloqueandoClics = true;
+
+        if (primeraFicha == segundaFicha)
+        {
+            bloqueandoClics = false;
+            return;
+        }
+
+        if (primeraFicha.idFicha == segundaFicha.idFicha || primeraFicha.textoPalabra == segundaFicha.textoPalabra)
+        {
+            // En modo solo usamos las referencias reales de las fichas. Esto evita
+            // depender de indiceEnTablero cuando el servidor no lo envía o lo repite.
+            ProcesarParejaEncontradaLocal(primeraFicha, segundaFicha);
+        }
+        else
+        {
+            StartCoroutine(OcultarParejaFallidaLocal(primeraFicha, segundaFicha));
+        }
+    }
+
+    private System.Collections.IEnumerator OcultarParejaFallidaLocal(ControladorFicha ficha1, ControladorFicha ficha2)
+    {
+        yield return new WaitForSeconds(0.8f);
+        if (ficha1 != null) ficha1.OcultarFicha();
+        if (ficha2 != null) ficha2.OcultarFicha();
+        bloqueandoClics = false;
+    }
+
     private System.Collections.IEnumerator MostrarYQuitarPanelCo(string palabra, string rutaAudio)
     {
         if (textoTraduccionPanel != null) textoTraduccionPanel.text = palabra;
@@ -250,7 +315,30 @@ public class GestorTablero : MonoBehaviour
     {
         yield return new WaitForSeconds(0.5f);
         if (panelJuego != null) panelJuego.SetActive(false);
-        if (panelNivelCompletado != null) panelNivelCompletado.SetActive(true);
+        if (panelVictoria != null) panelVictoria.SetActive(true);
+    }
+
+    private void ProcesarParejaEncontradaLocal(ControladorFicha ficha1, ControladorFicha ficha2)
+    {
+        // Preparar el marcador antes de abrir el panel de victoria (la pareja
+        // que se está cerrando también debe aparecer en el puntaje final).
+        if (ControladorJuego.Instance != null && !ControladorJuego.Instance.esModoMultijugador)
+        {
+            ControladorJuego.Instance.puntosJugadorX = parejasEncontradas + 1;
+            if (ControladorJuego.Instance.textoPuntajeX != null)
+                ControladorJuego.Instance.textoPuntajeX.text = $"Pts {parejasEncontradas + 1}";
+        }
+
+        ProcesarParejaEncontrada(ficha1, ficha2);
+
+        // En modo solo no existe el evento de puntuación del servidor; actualizamos
+        // el marcador local después de cerrar la pareja.
+        if (ControladorJuego.Instance != null && !ControladorJuego.Instance.esModoMultijugador)
+        {
+            ControladorJuego.Instance.puntosJugadorX = parejasEncontradas;
+            if (ControladorJuego.Instance.textoPuntajeX != null)
+                ControladorJuego.Instance.textoPuntajeX.text = $"Pts {parejasEncontradas}";
+        }
     }
 
 
@@ -267,43 +355,73 @@ public class GestorTablero : MonoBehaviour
 
     public void ReproducirAudioDeFila(string rutaAudioRelativa)
     {
-        rutaAudioRelativa = rutaAudioRelativa.TrimStart('/');
-        string urlAudio = $"{AppConfig.BaseURL.Replace("/api", "")}/{rutaAudioRelativa}";
-        StartCoroutine(DescargarYReproducirAudio(urlAudio));
+        Debug.Log($"🔍 Buscando archivo : [{rutaAudioRelativa}]");
+        if (string.IsNullOrEmpty(rutaAudioRelativa)) return;
+
+        // Limpiamos la extensión y las plecas iniciales
+        string rutaLimpia = rutaAudioRelativa.Replace(".mp3", "").Replace(".wav", "").TrimStart('/');
+
+        // Si la ruta viene con "sonidos/", se lo quitamos porque la carpeta física raíz dentro de Resources es "niveles"
+        if (rutaLimpia.StartsWith("sonidos/"))
+        {
+            rutaLimpia = rutaLimpia.Substring("sonidos/".Length);
+        }
+
+        Debug.Log($"🔍 Buscando archivo físicamente en Resources con ruta final: [{rutaLimpia}]");
+        StartCoroutine(DescargarYReproducirAudio(rutaLimpia));
     }
 
-    private System.Collections.IEnumerator DescargarYReproducirAudio(string url)
+    private System.Collections.IEnumerator DescargarYReproducirAudio(string rutaAudio)
     {
-        using (UnityEngine.Networking.UnityWebRequest www = UnityEngine.Networking.UnityWebRequestMultimedia.GetAudioClip(url, AudioType.MPEG))
-        {
-            yield return www.SendWebRequest();
+        // Quitamos la extensión .mp3 o .wav porque Resources.Load no la requiere
+        string rutaSinExtension = rutaAudio.Replace(".mp3", "").Replace(".wav", "");
 
-            if (www.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
-            {
-                AudioClip clip = UnityEngine.Networking.DownloadHandlerAudioClip.GetContent(www);
-                if (clip != null)
-                {
-                    AudioSource audioSource = GetComponent<AudioSource>();
-                    if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
-                    audioSource.PlayOneShot(clip);
-                }
-            }
+        // Cargamos el AudioClip directamente desde los recursos locales de Unity
+        ResourceRequest request = Resources.LoadAsync<AudioClip>(rutaSinExtension);
+        yield return request;
+
+        AudioClip clip = request.asset as AudioClip;
+
+        if (clip != null)
+        {
+            AudioSource audioSource = GetComponent<AudioSource>();
+            if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
+
+            audioSource.PlayOneShot(clip);
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ No se encontró el audio en los recursos locales: " + rutaSinExtension);
         }
     }
 
     public void BotonSiguienteNivel_Click()
     {
-        if (panelNivelCompletado != null) panelNivelCompletado.SetActive(false);
+        ControladorVictoria victoria = FindFirstObjectByType<ControladorVictoria>();
+        if (victoria != null) victoria.DetenerTemporizador();
+        if (panelVictoria != null) panelVictoria.SetActive(false);
+        if (panelVictoriaIndividual != null) panelVictoriaIndividual.SetActive(false);
         nivelActual++;
         if (textoNivelTitulo != null) textoNivelTitulo.text = "Nivel " + nivelActual;
         if (panelJuego != null) panelJuego.SetActive(true);
 
-        FindFirstObjectByType<ControladorModoSolo>().SolicitarModoIndividual();
+        if (ControladorJuego.Instance != null && ControladorJuego.Instance.esModoMultijugador)
+        {
+            // En multijugador el servidor debe avisar a ambos jugadores.
+            ControladorJuego.Instance.SolicitarSiguienteNivel(
+                ControladorJuego.Instance.nombreSalaActual,
+                nivelActual - 1);
+        }
+        else
+        {
+            FindFirstObjectByType<ControladorModoSolo>().SolicitarModoIndividual();
+        }
     }
 
     public void BotonMenuPrincipal_Click()
     {
-        if (panelNivelCompletado != null) panelNivelCompletado.SetActive(false);
+        if (panelVictoria != null) panelVictoria.SetActive(false);
+        if (panelVictoriaIndividual != null) panelVictoriaIndividual.SetActive(false);
         if (panelJuego != null) panelJuego.SetActive(false);
         if (panelLobby != null) panelLobby.SetActive(true);
     }
@@ -381,6 +499,19 @@ public class GestorTablero : MonoBehaviour
 
         Debug.Log($"🔍 Procesando pareja encontrada global -> IDs: [{idx1}] y [{idx2}]");
 
+        // El flujo multijugador localiza las fichas por su índice lógico.
+        ProcesarParejaEncontrada(f1, f2);
+    }
+
+    private void ProcesarParejaEncontrada(ControladorFicha f1, ControladorFicha f2)
+    {
+        if (f1 == null || f2 == null || f1 == f2)
+        {
+            Debug.LogWarning("No se pudo cerrar la pareja: no se encontraron dos fichas distintas.");
+            bloqueandoClics = false;
+            return;
+        }
+
         if (f1 != null)
         {
             f1.estaEliminada = true;
@@ -400,12 +531,74 @@ public class GestorTablero : MonoBehaviour
         parejasEncontradas++;
         if (parejasEncontradas >= totalParejasDelNivel)
         {
-            Debug.Log("¡Nivel completado con éxito!");
-            StartCoroutine(MostrarAvisoNivelCompletadoCo());
+            int nivelActualPartida = nivelActual;
+            string nombreSalaActual = (ControladorJuego.Instance != null) ? ControladorJuego.Instance.nombreSalaActual : "";
+
+            bool esModoMultijugador = ControladorJuego.Instance != null && ControladorJuego.Instance.esModoMultijugador;
+            GameObject panelActivo = esModoMultijugador ? panelVictoria : panelVictoriaIndividual;
+
+            // Compatibilidad con escenas donde las referencias no se asignaron en el Inspector.
+            if (panelActivo == null)
+                panelActivo = BuscarPanelPorNombre(esModoMultijugador ? "PanelVictoria" : "PanelVictoriaIndividual");
+            if (panelActivo == null && esModoMultijugador)
+                panelActivo = BuscarPanelPorNombre("PanelNivelCompletado");
+
+            if (esModoMultijugador)
+                panelVictoria = panelActivo;
+            else
+                panelVictoriaIndividual = panelActivo;
+
+            Debug.Log($"¡Nivel completado con éxito! Nivel: {nivelActualPartida} | Sala: {nombreSalaActual}");
+
+            if (panelActivo != null)
+            {
+                if (panelVictoria != null && panelVictoria != panelActivo) panelVictoria.SetActive(false);
+                if (panelVictoriaIndividual != null && panelVictoriaIndividual != panelActivo) panelVictoriaIndividual.SetActive(false);
+                panelActivo.SetActive(true);
+
+                ControladorVictoria controladorVictoria = panelActivo.GetComponentInChildren<ControladorVictoria>(true);
+                if (controladorVictoria == null)
+                    controladorVictoria = panelActivo.AddComponent<ControladorVictoria>();
+
+                if (controladorVictoria != null)
+                {
+                    // Llamamos al método con los 2 argumentos originales que sí existen
+                    string nombreX = ControladorJuego.Instance != null && ControladorJuego.Instance.textoNombreX != null ? ControladorJuego.Instance.textoNombreX.text : "Jugador X";
+                    string nombreY = ControladorJuego.Instance != null && ControladorJuego.Instance.textoNombreY != null ? ControladorJuego.Instance.textoNombreY.text : "Jugador Y";
+                    int puntosX = ControladorJuego.Instance != null ? ControladorJuego.Instance.puntosJugadorX : parejasEncontradas;
+                    int puntosY = ControladorJuego.Instance != null ? ControladorJuego.Instance.puntosJugadorY : 0;
+                    if (ControladorJuego.Instance == null || !ControladorJuego.Instance.esModoMultijugador)
+                        puntosX = parejasEncontradas;
+                    controladorVictoria.ActivarPantallaVictoria(nivelActualPartida, nombreSalaActual, nombreX, puntosX, nombreY, puntosY);
+                }
+                else
+                {
+                    Debug.LogError("⚠️ No se encontró el componente ControladorVictoria en el panel de nivel completado.");
+                }
+            }
+            else
+            {
+                Debug.LogError(esModoMultijugador
+                    ? "No se encontró PanelVictoria. Asígnalo en GestorTablero."
+                    : "No se encontró PanelVictoriaIndividual. Asígnalo en GestorTablero.");
+            }
         }
 
         bloqueandoClics = false;
         ActualizarTextoTurno();
+    }
+
+    private GameObject BuscarPanelPorNombre(string nombre)
+    {
+        // GameObject.Find no devuelve objetos inactivos; el panel de victoria
+        // normalmente empieza desactivado, por eso buscamos también en la escena
+        // cargada mediante Resources.FindObjectsOfTypeAll.
+        foreach (GameObject objeto in Resources.FindObjectsOfTypeAll<GameObject>())
+        {
+            if (objeto.name == nombre && objeto.scene.IsValid())
+                return objeto;
+        }
+        return null;
     }
 
 

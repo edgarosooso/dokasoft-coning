@@ -190,67 +190,7 @@ public class ControladorModoPareja : MonoBehaviour
             }
         });
 
-        // 2. Evento de inicio de partida
-        // 2. Evento de inicio de partida
-        ControladorJuego.Instance.socket.OnUnityThread("iniciar_partida", (response) =>
-        {
-            try
-            {
-                Debug.Log("--- PARTIDA MULTIJUGADOR INICIADA ---");
-                string rawJson = response != null ? response.ToString() : "";
-                DatosPartidaRespuesta respuesta = null;
-
-                try
-                {
-                    respuesta = Newtonsoft.Json.JsonConvert.DeserializeObject<DatosPartidaRespuesta>(rawJson);
-                }
-                catch
-                {
-                    var tokenArray = Newtonsoft.Json.Linq.JArray.Parse(rawJson);
-                    if (tokenArray.Count > 0)
-                    {
-                        respuesta = tokenArray[0].ToObject<DatosPartidaRespuesta>();
-                    }
-                }
-
-                if (respuesta != null)
-                {
-                    // Activamos la bandera de multijugador
-                    ControladorJuego.Instance.esModoMultijugador = true;
-
-                    // Asignamos directamente el nombre de la sala que vino desde el servidor
-                    ControladorJuego.Instance.nombreSalaActual = respuesta.nombreSala;
-
-                    // --- ALIMENTAR EL TURNO INICIAL ---
-                    ControladorJuego.Instance.turnoActual = respuesta.turnoActual;
-
-                    Debug.Log($"🎮 Turno inicial asignado por servidor: [{respuesta.turnoActual}] | Mi Socket ID es: [{ControladorJuego.Instance.socket.Id}]");
-
-                    if (panelLobby != null) panelLobby.SetActive(false);
-                    if (panelJuego != null) panelJuego.SetActive(true);
-
-                    if (gestorTablero != null)
-                    {
-                        gestorTablero.ConfigurarTablero(respuesta.fichas);
-
-                        if (respuesta.fichas.Count > 0)
-                        {
-                            gestorTablero.CargarNuevaPalabra(respuesta.fichas[0].traduccion);
-                        }
-
-                        // 👈 Forzamos la actualización del texto del turno ya con el tablero listo
-                        gestorTablero.ActualizarTextoTurno();
-                    }
-                }
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError("Error al procesar 'iniciar_partida' en modo pareja: " + e.ToString());
-            }
-        });
-
-        // 3. Evento de actualización de estado
-        // 3. Evento de actualización de estado
+       
         ControladorJuego.Instance.socket.OnUnityThread("actualizar_estado_partida", (response) =>
         {
             try
