@@ -23,9 +23,12 @@ public class jugadorPrefab : MonoBehaviour
             textoNombre.text = nombre;
         }
 
-        if (!string.IsNullOrEmpty(avatarUrl) && gameObject.activeInHierarchy)
+        // Normalizamos la URL antes de intentar descargarla
+        string urlNormalizada = NormalizarUrlAvatar(avatarUrl);
+
+        if (!string.IsNullOrEmpty(urlNormalizada) && gameObject.activeInHierarchy)
         {
-            StartCoroutine(DescargarAvatar(avatarUrl));
+            StartCoroutine(DescargarAvatar(urlNormalizada));
         }
     }
 
@@ -48,8 +51,33 @@ public class jugadorPrefab : MonoBehaviour
         }
     }
 
+    private string NormalizarUrlAvatar(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return "";
+        url = url.Trim();
+        
+        // Si ya viene con http o https, lo limpiamos de prefijos incorrectos si los tuviera, o lo devolvemos
+        if (url.StartsWith("http://") || url.StartsWith("https://"))
+        {
+            // Si por alguna razón la URL absoluta trae el segmento viejo de IIS, lo corregimos al vuelo:
+            if (url.Contains("/dokasoft-coning/imagenes/avatar/"))
+            {
+                url = url.Replace("/dokasoft-coning/imagenes/avatar/", "/imagenes/avatar/");
+            }
+            return url;
+        }
+        
+        // Si empieza con barra, completamos con el dominio base
+        if (url.StartsWith("/")) return "https://dokasoft.com" + url;
+        
+        // Forzamos a que siempre busque en la ruta limpia del proxy que mapeamos en IIS
+        return "https://dokasoft.com/imagenes/avatar/" + url.TrimStart('/');
+    }
+
     private IEnumerator DescargarAvatar(string url)
     {
+        Debug.Log("🔍 [Prefab] Intentando descargar avatar normalizado: " + url);
+
         using (UnityWebRequest www = UnityWebRequestTexture.GetTexture(url))
         {
             yield return www.SendWebRequest();
@@ -63,11 +91,12 @@ public class jugadorPrefab : MonoBehaviour
                 if (imagenAvatar != null && textura != null)
                 {
                     imagenAvatar.texture = textura;
+                    Debug.Log("🟢 [Prefab] Avatar descargado con éxito desde: " + url);
                 }
             }
             else
             {
-                Debug.LogWarning($"No se pudo descargar el avatar desde {url}: {www.error}");
+                Debug.LogWarning($"🔴 [Prefab] No se pudo descargar el avatar desde {url}: {www.error}");
             }
         }
     }

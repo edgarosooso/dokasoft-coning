@@ -56,6 +56,15 @@ public class ControladorFicha : MonoBehaviour
     {
         if (estaEliminada || estaVolteada) return;
 
+        // Evita que clics rápidos revelen una tercera ficha mientras se
+        // procesa la pareja actual, tanto en solo como en multijugador.
+        if (GestorTablero.Instance != null && !GestorTablero.Instance.PuedeRecibirClic())
+            return;
+
+        if (ControladorJuego.Instance != null && !ControladorJuego.Instance.esModoMultijugador &&
+            GestorTablero.Instance != null && !GestorTablero.Instance.PuedeRecibirClicLocal())
+            return;
+
         // 🛑 VALIDACIÓN DE TURNO EN MULTIJUGADOR
         if (ControladorJuego.Instance != null && ControladorJuego.Instance.esModoMultijugador)
         {
@@ -71,7 +80,7 @@ public class ControladorFicha : MonoBehaviour
 
         RevelarFicha();
 
-Debug.Log("¡RUTA DE ARCIVO " + rutaAudio  );
+        Debug.Log("¡RUTA DE ARCIVO " + rutaAudio);
 
 
 
@@ -89,10 +98,8 @@ Debug.Log("¡RUTA DE ARCIVO " + rutaAudio  );
                 idJugador = ControladorJuego.Instance.id_player
             };
 
-            if (ControladorJuego.Instance.socket != null)
-            {
-                ControladorJuego.Instance.socket.Emit("procesar_clic_ficha", datosClic);
-            }
+            // Llamamos al método unificado en lugar de usar .socket directamente
+            ControladorJuego.Instance.EnviarEventoSocket("procesar_clic_ficha", datosClic);
         }
 
         if (GestorTablero.Instance != null)
@@ -112,6 +119,13 @@ Debug.Log("¡RUTA DE ARCIVO " + rutaAudio  );
         if (fondoVisual != null)
         {
             fondoVisual.SetActive(false);
+        }
+
+        // Llama al zoom automáticamente cuando la ficha se revela
+        ZoomFicha zoomScript = GetComponent<ZoomFicha>();
+        if (zoomScript != null)
+        {
+            zoomScript.EjecutarZoomTurno();
         }
     }
 

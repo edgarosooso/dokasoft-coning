@@ -53,20 +53,21 @@ public class ControladorInvitaciones : MonoBehaviour
     {
         Debug.Log($"Enviando invitación al servidor para el jugador ID: {idJugadorObjetivo}");
 
-        if (ControladorJuego.Instance != null && ControladorJuego.Instance.socket != null)
+        if (ControladorJuego.Instance != null && ControladorJuego.Instance.EstaConectado())
         {
             var datos = new
             {
-                idJugadorEmisor = ControladorJuego.Instance.id_player,
-                idJugadorReceptor = idJugadorObjetivo,
+                idEmisor = ControladorJuego.Instance.id_player.ToString(),
+                idReceptor = idJugadorObjetivo,
                 nombreEmisor = ControladorJuego.Instance.nombre_jugador
             };
 
-            ControladorJuego.Instance.socket.Emit("enviar_invitacion", datos);
+            // Usamos el método unificado de ControladorJuego que maneja APK y WebGL de forma transparente
+            ControladorJuego.Instance.EnviarEventoSocket("enviar_invitacion", datos);
         }
         else
         {
-            Debug.LogError("No se pudo enviar: El socket de ControladorJuego es nulo.");
+            Debug.LogError("No se pudo enviar: No hay conexión activa con el servidor.");
         }
 
         CerrarVentana();

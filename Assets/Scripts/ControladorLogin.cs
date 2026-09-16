@@ -18,6 +18,7 @@ public class ControlLogin : MonoBehaviour
 
     [Header("Configuración Servidor")]
     public string urlApi = "";
+    private bool yaEntroAlJuego = false;
 
     void Awake()
     {
@@ -120,24 +121,26 @@ public class ControlLogin : MonoBehaviour
         }
     }
 
-    void EntrarAlJuego(string id_player)
+   public void EntrarAlJuego(string id_player)
+{
+    // Evita que un doble clic o doble respuesta dispare el flujo dos veces
+    if (yaEntroAlJuego) return;
+    yaEntroAlJuego = true;
+
+    panelLogin.SetActive(false); 
+    lobbyJuego.SetActive(true);  
+
+    GameObject gestorLobby = GameObject.Find("Gestor_Lobby");
+    if (gestorLobby != null)
     {
-        panelLogin.SetActive(false); // Apagas el login
-        lobbyJuego.SetActive(true);  // Prendes el visual del lobby
-
-        // --- AQUÍ PRENDES EL GESTOR ---
-        GameObject gestorLobby = GameObject.Find("Gestor_Lobby");
-        if (gestorLobby != null)
-        {
-            gestorLobby.SetActive(true);
-            Debug.Log("<color=yellow>Gestor Lobby despertado después del Login.</color>");
-        }
-
-        // --- ÚNICO PUNTO DE CONEXIÓN AL SOCKET CON EL ID REAL ---
-        if (ControladorJuego.Instance != null)
-        {
-            Debug.Log($"<color=cyan>Conectando socket con ID real:</color> {id_player}");
-            ControladorJuego.Instance.ConfigurarSocket(id_player);
-        }
+        gestorLobby.SetActive(true);
+        Debug.Log("<color=yellow>Gestor Lobby despertado después del Login.</color>");
     }
+
+    if (ControladorJuego.Instance != null)
+    {
+        Debug.Log($"<color=cyan>Conectando socket con ID real:</color> {id_player}");
+        ControladorJuego.Instance.ConfigurarSocket(id_player);
+    }
+}
 }

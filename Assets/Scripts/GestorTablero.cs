@@ -29,6 +29,8 @@ public class GestorTablero : MonoBehaviour
     public GameObject panelVictoriaIndividual;
     private int parejasEncontradas = 0;
     private int totalParejasDelNivel = 0;
+    private int parejasJugadorX = 0;
+    private int parejasJugadorY = 0;
 
     [Header("Referencias de Paneles para Navegación")]
     public GameObject panelJuego;
@@ -40,6 +42,9 @@ public class GestorTablero : MonoBehaviour
 
     private bool bloqueandoClics = false;
     private ControladorFicha primeraFichaLocal;
+    private bool turnoMaquinaActivo = false;
+    private readonly List<ControladorFicha> memoriaMaquina = new List<ControladorFicha>();
+    private AudioSource audioSourceMaquina;
 
     void Awake()
     {
@@ -184,8 +189,22 @@ public class GestorTablero : MonoBehaviour
 
         bloqueandoClics = false;
         primeraFichaLocal = null;
+        turnoMaquinaActivo = false;
+        memoriaMaquina.Clear();
         parejasEncontradas = 0;
+        parejasJugadorX = 0;
+        parejasJugadorY = 0;
         totalParejasDelNivel = listaFichas.Count / 2;
+
+        if (ControladorJuego.Instance != null && !ControladorJuego.Instance.esModoMultijugador)
+        {
+            ControladorJuego.Instance.puntosJugadorX = 0;
+            ControladorJuego.Instance.puntosJugadorY = 0;
+            if (ControladorJuego.Instance.textoPuntajeX != null)
+                ControladorJuego.Instance.textoPuntajeX.text = "Pts 0";
+            if (ControladorJuego.Instance.textoPuntajeY != null)
+                ControladorJuego.Instance.textoPuntajeY.text = "Pts 0";
+        }
 
         if (panelVictoria != null)
             panelVictoria.SetActive(false);
@@ -233,6 +252,9 @@ public class GestorTablero : MonoBehaviour
 
         ficha.RevelarFicha();
 
+        if (EsModoMaquina())
+            RegistrarMemoriaMaquina(ficha);
+
         if (!esMultijugadorReal)
         {
             ProcesarSeleccionLocal(ficha);
@@ -258,6 +280,16 @@ public class GestorTablero : MonoBehaviour
             textoTraduccionUI.text = "[ Toca para ver traducción ]";
             estaRevelado = false;
         }
+    }
+
+    public bool PuedeRecibirClicLocal()
+    {
+        return !bloqueandoClics && !turnoMaquinaActivo;
+    }
+
+    public bool PuedeRecibirClic()
+    {
+        return !bloqueandoClics && !turnoMaquinaActivo;
     }
 
     private void ProcesarSeleccionLocal(ControladorFicha ficha)
@@ -297,6 +329,125 @@ public class GestorTablero : MonoBehaviour
         if (ficha1 != null) ficha1.OcultarFicha();
         if (ficha2 != null) ficha2.OcultarFicha();
         bloqueandoClics = false;
+
+        if (EsModoMaquina() && parejasEncontradas < totalParejasDelNivel)
+            StartCoroutine(TurnoMaquinaCo());
+    }
+
+    private bool EsModoMaquina()
+    {
+        return ControladorJuego.Instance != null &&
+               !ControladorJuego.Instance.esModoMultijugador &&
+               ControladorJuego.Instance.modoMaquina;
+    }
+
+    private System.Collections.IEnumerator TurnoMaquinaCo()
+    {
+        if (turnoMaquinaActivo || !EsModoMaquina()) yield break;
+        turnoMaquinaActivo = true;
+        bloqueandoClics = true;
+        if (textoTurnoUI != null) textoTurnoUI.text = "Turno de la máquina";
+        yield return new WaitForSeconds(0.7f);
+
+        while (parejasEncontradas < totalParejasDelNivel)
+        {
+            List<ControladorFicha> disponibles = new List<ControladorFicha>();
+            if (contenedorMatriz != null)
+            {
+                foreach (ControladorFicha ficha in contenedorMatriz.GetComponentsInChildren<ControladorFicha>(true))
+                    if (ficha != null && !ficha.estaEliminada && !ficha.estaVolteada)
+                        disponibles.Add(ficha);
+            }
+            if (disponibles.Count < 2) break;
+
+            ControladorFicha ficha1;
+            ControladorFicha ficha2;
+            ElegirFichasMaquina(disponibles, out ficha1, out ficha2);
+            ficha1.RevelarFicha();
+            RegistrarMemoriaMaquina(ficha1);
+            // La segunda ficha no se revela hasta que el audio de la primera
+            // haya terminado. Así los dos audios no se solapan.
+            yield return StartCoroutine(ReproducirAudioDeFilaYEsperar(ficha1.rutaAudio));
+            ficha2.RevelarFicha();
+            RegistrarMemoriaMaquina(ficha2);
+            if (!string.IsNullOrEmpty(ficha2.rutaAudio))
+                ReproducirAudioDeFila(ficha2.rutaAudio);
+            yield return new WaitForSeconds(0.65f);
+
+            bool esPareja = ficha1.idFicha == ficha2.idFicha || ficha1.textoPalabra == ficha2.textoPalabra;
+            if (esPareja)
+            {
+                if (ControladorJuego.Instance != null)
+                {
+                    parejasJugadorY++;
+                    ControladorJuego.Instance.puntosJugadorY = parejasJugadorY;
+                    if (ControladorJuego.Instance.textoPuntajeY != null)
+                        ControladorJuego.Instance.textoPuntajeY.text = $"Pts {ControladorJuego.Instance.puntosJugadorY}";
+                }
+                ProcesarParejaEncontrada(ficha1, ficha2);
+                // Espera a que termine la pantalla "pareja encontrada" antes
+                // de continuar con la siguiente jugada.
+                yield return new WaitForSeconds(Mathf.Max(0.2f, tiempoVisiblePanel) + 0.2f);
+            }
+            else
+            {
+                ficha1.OcultarFicha();
+                ficha2.OcultarFicha();
+                yield return new WaitForSeconds(0.35f);
+                turnoMaquinaActivo = false;
+                bloqueandoClics = false;
+                ActualizarTextoTurno();
+                yield break;
+            }
+        }
+
+        turnoMaquinaActivo = false;
+        bloqueandoClics = false;
+        ActualizarTextoTurno();
+    }
+
+    private void ElegirFichasMaquina(List<ControladorFicha> disponibles, out ControladorFicha ficha1, out ControladorFicha ficha2)
+    {
+        int dificultad = ControladorJuego.Instance != null ? Mathf.Clamp(ControladorJuego.Instance.dificultadMaquina, 1, 3) : 1;
+        ficha1 = null;
+        ficha2 = null;
+
+        // La máquina solo puede usar parejas que ya conoce por haberlas visto.
+        bool puedeUsarMemoria = dificultad == 3 || (dificultad == 2 && Random.value < 0.65f);
+        if (puedeUsarMemoria)
+        {
+            for (int i = 0; i < memoriaMaquina.Count && ficha1 == null; i++)
+            {
+                ControladorFicha conocida = memoriaMaquina[i];
+                if (conocida == null || conocida.estaEliminada || !disponibles.Contains(conocida)) continue;
+                for (int j = i + 1; j < memoriaMaquina.Count; j++)
+                {
+                    ControladorFicha otra = memoriaMaquina[j];
+                    if (otra != null && !otra.estaEliminada && disponibles.Contains(otra) &&
+                        (conocida.idFicha == otra.idFicha || conocida.textoPalabra == otra.textoPalabra))
+                    {
+                        ficha1 = conocida;
+                        ficha2 = otra;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (ficha1 != null) return;
+
+        // Si no conoce ninguna pareja, debe arriesgarse con fichas aleatorias.
+        ficha1 = disponibles[Random.Range(0, disponibles.Count)];
+        do
+        {
+            ficha2 = disponibles[Random.Range(0, disponibles.Count)];
+        } while (ficha2 == ficha1 && disponibles.Count > 1);
+    }
+
+    private void RegistrarMemoriaMaquina(ControladorFicha ficha)
+    {
+        if (ficha != null && !memoriaMaquina.Contains(ficha))
+            memoriaMaquina.Add(ficha);
     }
 
     private System.Collections.IEnumerator MostrarYQuitarPanelCo(string palabra, string rutaAudio)
@@ -320,25 +471,15 @@ public class GestorTablero : MonoBehaviour
 
     private void ProcesarParejaEncontradaLocal(ControladorFicha ficha1, ControladorFicha ficha2)
     {
-        // Preparar el marcador antes de abrir el panel de victoria (la pareja
-        // que se está cerrando también debe aparecer en el puntaje final).
+        // El puntaje del jugador solo cuenta sus propias parejas, no las de la máquina.
+        parejasJugadorX++;
         if (ControladorJuego.Instance != null && !ControladorJuego.Instance.esModoMultijugador)
         {
-            ControladorJuego.Instance.puntosJugadorX = parejasEncontradas + 1;
+            ControladorJuego.Instance.puntosJugadorX = parejasJugadorX;
             if (ControladorJuego.Instance.textoPuntajeX != null)
-                ControladorJuego.Instance.textoPuntajeX.text = $"Pts {parejasEncontradas + 1}";
+                ControladorJuego.Instance.textoPuntajeX.text = $"Pts {parejasJugadorX}";
         }
-
         ProcesarParejaEncontrada(ficha1, ficha2);
-
-        // En modo solo no existe el evento de puntuación del servidor; actualizamos
-        // el marcador local después de cerrar la pareja.
-        if (ControladorJuego.Instance != null && !ControladorJuego.Instance.esModoMultijugador)
-        {
-            ControladorJuego.Instance.puntosJugadorX = parejasEncontradas;
-            if (ControladorJuego.Instance.textoPuntajeX != null)
-                ControladorJuego.Instance.textoPuntajeX.text = $"Pts {parejasEncontradas}";
-        }
     }
 
 
@@ -369,6 +510,38 @@ public class GestorTablero : MonoBehaviour
 
         Debug.Log($"🔍 Buscando archivo físicamente en Resources con ruta final: [{rutaLimpia}]");
         StartCoroutine(DescargarYReproducirAudio(rutaLimpia));
+    }
+
+    private System.Collections.IEnumerator ReproducirAudioDeFilaYEsperar(string rutaAudioRelativa)
+    {
+        if (string.IsNullOrEmpty(rutaAudioRelativa)) yield break;
+
+        string rutaLimpia = rutaAudioRelativa.Replace(".mp3", "").Replace(".wav", "").TrimStart('/');
+        if (rutaLimpia.StartsWith("sonidos/"))
+            rutaLimpia = rutaLimpia.Substring("sonidos/".Length);
+
+        ResourceRequest request = Resources.LoadAsync<AudioClip>(rutaLimpia);
+        yield return request;
+
+        AudioClip clip = request.asset as AudioClip;
+        if (clip == null)
+        {
+            Debug.LogWarning("⚠️ No se encontró el audio en los recursos locales: " + rutaLimpia);
+            yield break;
+        }
+
+        // Una fuente exclusiva evita que otro sonido corte o altere la espera
+        // que sincroniza las dos fichas de la máquina.
+        if (audioSourceMaquina == null)
+        {
+            GameObject objetoAudioMaquina = new GameObject("AudioMaquina");
+            objetoAudioMaquina.transform.SetParent(transform, false);
+            audioSourceMaquina = objetoAudioMaquina.AddComponent<AudioSource>();
+        }
+
+        audioSourceMaquina.clip = clip;
+        audioSourceMaquina.Play();
+        yield return new WaitWhile(() => audioSourceMaquina != null && audioSourceMaquina.isPlaying);
     }
 
     private System.Collections.IEnumerator DescargarYReproducirAudio(string rutaAudio)
@@ -565,10 +738,8 @@ public class GestorTablero : MonoBehaviour
                     // Llamamos al método con los 2 argumentos originales que sí existen
                     string nombreX = ControladorJuego.Instance != null && ControladorJuego.Instance.textoNombreX != null ? ControladorJuego.Instance.textoNombreX.text : "Jugador X";
                     string nombreY = ControladorJuego.Instance != null && ControladorJuego.Instance.textoNombreY != null ? ControladorJuego.Instance.textoNombreY.text : "Jugador Y";
-                    int puntosX = ControladorJuego.Instance != null ? ControladorJuego.Instance.puntosJugadorX : parejasEncontradas;
+                    int puntosX = ControladorJuego.Instance != null ? ControladorJuego.Instance.puntosJugadorX : parejasJugadorX;
                     int puntosY = ControladorJuego.Instance != null ? ControladorJuego.Instance.puntosJugadorY : 0;
-                    if (ControladorJuego.Instance == null || !ControladorJuego.Instance.esModoMultijugador)
-                        puntosX = parejasEncontradas;
                     controladorVictoria.ActivarPantallaVictoria(nivelActualPartida, nombreSalaActual, nombreX, puntosX, nombreY, puntosY);
                 }
                 else

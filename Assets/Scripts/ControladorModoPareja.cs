@@ -31,10 +31,21 @@ public class ControladorModoPareja : MonoBehaviour
 
     System.Collections.IEnumerator ConectarEventosParejaConRetraso()
     {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // En WebGL esperamos a que la instancia exista (la conexión la maneja el JSBridge)
+        while (ControladorJuego.Instance == null)
+        {
+            yield return null;
+        }
+        // Damos un pequeño respiro para asegurar que el socket de JS esté listo
+        yield return new WaitForSeconds(0.5f);
+#else
+        // En Android / PC / Editor esperamos al socket de C# como antes
         while (ControladorJuego.Instance == null || ControladorJuego.Instance.socket == null)
         {
             yield return null;
         }
+#endif
 
         EscucharEventosSocketPareja();
         Debug.Log("Eventos de socket en pareja suscritos correctamente.");
@@ -64,21 +75,21 @@ public class ControladorModoPareja : MonoBehaviour
     {
         Debug.Log($"Enviando invitación al servidor para el jugador ID: {idJugadorDestino}");
 
-        if (ControladorJuego.Instance != null && ControladorJuego.Instance.socket != null)
+        if (ControladorJuego.Instance != null && ControladorJuego.Instance.EstaConectado())
         {
             var datosInvitacion = new
             {
-                idJugadorEmisor = ControladorJuego.Instance.id_player,
-                idJugadorReceptor = idJugadorDestino,
+                idEmisor = ControladorJuego.Instance.id_player.ToString(),
+                idReceptor = idJugadorDestino,
                 nombreEmisor = ControladorJuego.Instance.nombre_jugador
             };
 
-            ControladorJuego.Instance.socket.Emit("enviar_invitacion", datosInvitacion);
+            ControladorJuego.Instance.EnviarEventoSocket("enviar_invitacion", datosInvitacion);
             CerrarVentanaInvitacion();
         }
         else
         {
-            Debug.LogError("No se pudo enviar la invitación: El socket de ControladorJuego es nulo.");
+            Debug.LogError("No se pudo enviar la invitación: El socket no está disponible o conectado.");
         }
     }
 
@@ -107,24 +118,29 @@ public class ControladorModoPareja : MonoBehaviour
     {
         Debug.Log($"Aceptando invitación del emisor ID: {idEmisorActual}");
 
-        if (ControladorJuego.Instance != null && ControladorJuego.Instance.socket != null)
+        if (ControladorJuego.Instance != null && ControladorJuego.Instance.EstaConectado())
         {
-            // Activamos la bandera global de multijugador aquí
             ControladorJuego.Instance.esModoMultijugador = true;
+            ControladorJuego.Instance.modoSoloSolicitado = false;
+            ControladorJuego.Instance.modoMaquina = false;
 
-            // Guardamos el ID del emisor como la sala actual (ajusta esto si tu servidor usa otro nombre de sala)
             ControladorJuego.Instance.nombreSalaActual = idEmisorActual;
 
             var datosAceptacion = new
             {
                 idEmisor = idEmisorActual,
-                idReceptor = ControladorJuego.Instance.id_player
+                idReceptor = ControladorJuego.Instance.id_player,
+                nivel = PlayerPrefs.GetInt("NivelSeleccionado", 1)
             };
 
-            ControladorJuego.Instance.socket.Emit("aceptar_invitacion", datosAceptacion);
+            ControladorJuego.Instance.EnviarEventoSocket("aceptar_invitacion", datosAceptacion);
 
             if (panelVentanaRecepcion != null)
                 panelVentanaRecepcion.SetActive(false);
+        }
+        else
+        {
+            Debug.LogError("No se pudo aceptar la invitación: El socket no está disponible o conectado.");
         }
     }
 
@@ -140,6 +156,11 @@ public class ControladorModoPareja : MonoBehaviour
 
     void EscucharEventosSocketPareja()
     {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // En WebGL las escuchas directas de C# se omiten porque los eventos entran 
+        // a través de llamadas de JavaScript hacia métodos públicos o de puente en Unity.
+        Debug.Log("Modo WebGL activo: Las escuchas de eventos se manejan mediante el puente de JavaScript.");
+#else
         if (ControladorJuego.Instance == null || ControladorJuego.Instance.socket == null) return;
 
         // 1. Evento de ficha volteada por el rival
@@ -159,7 +180,6 @@ public class ControladorModoPareja : MonoBehaviour
 
                 if (token is Newtonsoft.Json.Linq.JObject obj && obj["indiceFicha"] != null)
                 {
-                    // Cambiado aquí para evitar el error de sintaxis:
                     indiceFichaRemota = obj["indiceFicha"].ToObject<int>();
                 }
 
@@ -190,7 +210,7 @@ public class ControladorModoPareja : MonoBehaviour
             }
         });
 
-       
+        // 2. Evento de actualización de estado de la partida
         ControladorJuego.Instance.socket.OnUnityThread("actualizar_estado_partida", (response) =>
         {
             try
@@ -206,16 +226,11 @@ public class ControladorModoPareja : MonoBehaviour
 
                 if (token is Newtonsoft.Json.Linq.JObject obj)
                 {
-                    // Actualizamos el turno actual con lo que mande el servidor
                     if (obj["turnoActual"] != null)
                     {
                         ControladorJuego.Instance.turnoActual = obj["turnoActual"].ToString();
                         Debug.Log("Nuevo turno asignado al socket ID: " + ControladorJuego.Instance.turnoActual);
                     }
-
-                    // Opcional: Si también mandas puntajes en este evento, puedes actualizarlos aquí en tu UI
-                    // string puntajeX = obj["puntajeX"]?.ToString();
-                    // string puntajeY = obj["puntajeY"]?.ToString();
                 }
             }
             catch (System.Exception e)
@@ -224,7 +239,7 @@ public class ControladorModoPareja : MonoBehaviour
             }
         });
 
-        // 4. Evento de recepción de invitación
+        // 3. Evento de recepción de invitación
         ControladorJuego.Instance.socket.OnUnityThread("recibir_invitacion", (response) =>
         {
             try
@@ -262,5 +277,6 @@ public class ControladorModoPareja : MonoBehaviour
                 Debug.LogError("Error al procesar 'recibir_invitacion': " + e.ToString());
             }
         });
+#endif
     }
 }
