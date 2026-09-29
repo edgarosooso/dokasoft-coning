@@ -11,7 +11,6 @@ public class ControladorModoPareja : MonoBehaviour
 
     [Header("UI y Referencias Modo Pareja")]
     public GestorTablero gestorTablero;
-    public GameObject panelLobby;
     public GameObject panelJuego;
 
     [Header("Elementos de UI Multijugador")]

@@ -4,10 +4,14 @@ using TMPro;
 
 public class ControladorFicha : MonoBehaviour
 {
+    [Header("Referencias de Texto")]
+    public TextMeshProUGUI textoEspanol;        // Arriba (Español)
+    public TextMeshProUGUI textoIngles;         // Centro (Inglés)
+    public TextMeshProUGUI textoPronunciacion;  // Abajo (Fonética)
+
     public int indiceEnTablero;
     private Button botonFicha;
-    private TextMeshProUGUI textoFicha;
-    public string traduccionFicha;
+    private TextMeshProUGUI textoFicha; // Mantuvimos este por compatibilidad interna si se requiere
 
     [Header("Referencias Visuales")]
     [Tooltip("Arrastra aquí el objeto hijo 'FondoVisual' desde el inspector de Unity")]
@@ -15,6 +19,8 @@ public class ControladorFicha : MonoBehaviour
 
     public int idFicha;
     public string textoPalabra;
+    public string traduccionFicha;
+    public string pronunciacionFicha; // 👈 Variable agregada y asegurada
     public string rutaAudio;
     public bool estaVolteada = false;
     public bool estaEliminada = false;
@@ -38,17 +44,27 @@ public class ControladorFicha : MonoBehaviour
         }
     }
 
-    public void ConfigurarFicha(int id, string texto, string audio, string traduccion, int indicePos)
+    public void ConfigurarFicha(int id, string texto, string audio, string traduccion, string pronunciacion, int indicePos)
     {
         idFicha = id;
-        textoPalabra = texto;
+        textoPalabra = texto;                 // Inglés (Centro)
         rutaAudio = audio;
-        traduccionFicha = traduccion;
-        indiceEnTablero = indicePos; // 👈 Unificado correctamente aquí
+        traduccionFicha = traduccion;         // Español (Arriba)
+        pronunciacionFicha = pronunciacion;   // Fonética (Abajo)
+        indiceEnTablero = indicePos;
 
         estaEliminada = false;
 
         if (fondoVisual != null) fondoVisual.SetActive(true);
+
+        // 🔍 DEBUG PARA VERIFICAR QUE LLEGAN LOS DATOS
+        Debug.Log($"🧩 [Ficha ID {id}] -> Español: '{traduccionFicha}' | Inglés: '{textoPalabra}' | Pronunciación: '{pronunciacionFicha}'");
+
+        // Asignación a los componentes visuales de la tarjeta
+        if (textoEspanol != null) textoEspanol.text = traduccionFicha;
+        if (textoIngles != null) textoIngles.text = textoPalabra;
+        if (textoPronunciacion != null) textoPronunciacion.text = pronunciacionFicha;
+
         OcultarFicha();
     }
 
@@ -56,8 +72,6 @@ public class ControladorFicha : MonoBehaviour
     {
         if (estaEliminada || estaVolteada) return;
 
-        // Evita que clics rápidos revelen una tercera ficha mientras se
-        // procesa la pareja actual, tanto en solo como en multijugador.
         if (GestorTablero.Instance != null && !GestorTablero.Instance.PuedeRecibirClic())
             return;
 
@@ -68,11 +82,10 @@ public class ControladorFicha : MonoBehaviour
         // 🛑 VALIDACIÓN DE TURNO EN MULTIJUGADOR
         if (ControladorJuego.Instance != null && ControladorJuego.Instance.esModoMultijugador)
         {
-            // Comparamos si el ID del jugador actual es diferente al turno actual registrado
             if (ControladorJuego.Instance.turnoActual != ControladorJuego.Instance.id_player.ToString())
             {
                 Debug.Log("⏳ No es tu turno, espera a que juegue el rival.");
-                return; // Bloquea por completo el clic si no le corresponde jugar
+                return;
             }
         }
 
@@ -80,9 +93,7 @@ public class ControladorFicha : MonoBehaviour
 
         RevelarFicha();
 
-        Debug.Log("¡RUTA DE ARCIVO " + rutaAudio);
-
-
+        Debug.Log("¡RUTA DE ARCHIVO " + rutaAudio);
 
         if (!string.IsNullOrEmpty(rutaAudio))
         {
@@ -98,7 +109,6 @@ public class ControladorFicha : MonoBehaviour
                 idJugador = ControladorJuego.Instance.id_player
             };
 
-            // Llamamos al método unificado en lugar de usar .socket directamente
             ControladorJuego.Instance.EnviarEventoSocket("procesar_clic_ficha", datosClic);
         }
 
@@ -108,26 +118,32 @@ public class ControladorFicha : MonoBehaviour
         }
     }
 
-    public void RevelarFicha()
+   public void RevelarFicha()
+{
+    estaVolteada = true;
+
+    if (textoEspanol != null) textoEspanol.text = traduccionFicha;
+    if (textoIngles != null) textoIngles.text = textoPalabra;
+    if (textoPronunciacion != null) textoPronunciacion.text = pronunciacionFicha;
+
+    if (fondoVisual != null)
     {
-        estaVolteada = true;
-        if (textoFicha != null)
-        {
-            textoFicha.text = textoPalabra;
-        }
-
-        if (fondoVisual != null)
-        {
-            fondoVisual.SetActive(false);
-        }
-
-        // Llama al zoom automáticamente cuando la ficha se revela
-        ZoomFicha zoomScript = GetComponent<ZoomFicha>();
-        if (zoomScript != null)
-        {
-            zoomScript.EjecutarZoomTurno();
-        }
+        fondoVisual.SetActive(false);
     }
+
+    // 🔍 DEPURACIÓN PARA VER EL ERROR EN LA CONSOLA
+   /*
+    if (GestorPopUpEstudio.Instance != null)
+    {
+        Debug.Log("✅ ¡GestorPopUpEstudio encontrado! Abriendo pop-up con: " + traduccionFicha);
+        GestorPopUpEstudio.Instance.MostrarPopUp(traduccionFicha, textoPalabra, pronunciacionFicha);
+    }
+    else
+    {
+        Debug.LogError("❌ ERROR CRÍTICO: GestorPopUpEstudio.Instance es NULL. El script no está en la escena o no se inicializó en el Awake.");
+    }
+*/
+}
 
     public void RevelarFichaRemota()
     {
@@ -141,19 +157,16 @@ public class ControladorFicha : MonoBehaviour
         }
     }
 
-
-
     public void OcultarFicha()
     {
-        // Esto se usa exclusivamente cuando fallan y vuelven a quedar boca abajo
-        if (estaEliminada) return; // Si ya fue encontrada, no la toques
+        if (estaEliminada) return;
 
         estaVolteada = false;
 
-        if (textoFicha != null)
-        {
-            textoFicha.text = "";
-        }
+        // Limpiamos los tres campos de texto al ocultar la tarjeta
+        if (textoEspanol != null) textoEspanol.text = "";
+        if (textoIngles != null) textoIngles.text = "";
+        if (textoPronunciacion != null) textoPronunciacion.text = "";
 
         if (fondoVisual != null)
         {
@@ -172,15 +185,11 @@ public class ControladorFicha : MonoBehaviour
             if (imgBot != null) imgBot.enabled = false;
         }
 
-        if (textoFicha != null)
-            textoFicha.text = "";
+        if (textoEspanol != null) textoEspanol.text = "";
+        if (textoIngles != null) textoIngles.text = "";
+        if (textoPronunciacion != null) textoPronunciacion.text = "";
 
         if (fondoVisual != null)
             fondoVisual.SetActive(false);
-
-        // Apagamos el objeto por completo para que desaparezca de la matriz del juego
-        // gameObject.SetActive(false);
     }
-
-
 }

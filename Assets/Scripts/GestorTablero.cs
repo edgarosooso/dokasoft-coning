@@ -12,7 +12,7 @@ public class GestorTablero : MonoBehaviour
     [Header("Panel de Traducción")]
     public GameObject panelTraduccionObjeto;
     public TextMeshProUGUI textoTraduccionPanel;
-    public float tiempoVisiblePanel = 2f;
+    public float tiempoVisiblePanel = 3f;
 
     public static GestorTablero Instance;
     public int nivelActual = 1;
@@ -34,7 +34,7 @@ public class GestorTablero : MonoBehaviour
 
     [Header("Referencias de Paneles para Navegación")]
     public GameObject panelJuego;
-    public GameObject panelLobby;
+   // public GameObject panelLobby;
 
     [Header("Referencias de UI")]
     public Transform contenedorMatriz;
@@ -165,7 +165,6 @@ public class GestorTablero : MonoBehaviour
         }
     }
 
-
     public void ConfigurarTablero(List<ItemNivelRespuesta> listaFichas)
     {
         if (listaFichas == null)
@@ -222,15 +221,80 @@ public class GestorTablero : MonoBehaviour
             ControladorFicha controladorFicha = nuevoCuadro.GetComponent<ControladorFicha>();
             if (controladorFicha != null)
             {
-                // Configura la ficha pasándole el índice que viene de la base de datos/servidor
-                controladorFicha.ConfigurarFicha(ficha.id, ficha.texto, ficha.audio, ficha.traduccion, ficha.indice_posicion);
+                // Configura la ficha pasándole ahora también la pronunciación
+                controladorFicha.ConfigurarFicha(ficha.id, ficha.texto, ficha.audio, ficha.traduccion, ficha.pronunciacion, ficha.indice_posicion);
 
-                // 🔍 IMPRESIÓN DE DEPURACIÓN: Vamos a ver en consola si el índice se asignó bien
-                Debug.Log($"📌 Ficha instanciada -> Texto: {ficha.texto} | IndicePosicion asignado: {ficha.indice_posicion}");
+                // 🔍 IMPRESIÓN DE DEPURACIÓN: Verificamos que la pronunciación llegue correctamente
+                Debug.Log($"📌 Ficha instanciada -> Inglés: {ficha.texto} | Pronunciación: {ficha.pronunciacion} | IndicePosicion: {ficha.indice_posicion}");
             }
         }
         ActualizarTextoTurno();
     }
+    // public void ConfigurarTablero(List<ItemNivelRespuesta> listaFichas)
+    // {
+    //     if (listaFichas == null)
+    //     {
+    //         Debug.LogError("iniciar_partida recibió fichas nulas.");
+    //         return;
+    //     }
+    //     if (contenedorMatriz == null)
+    //         contenedorMatriz = GameObject.Find("ContenedorMatriz")?.transform;
+    //     if (contenedorMatriz == null || prefabCuadro == null)
+    //     {
+    //         Debug.LogError($"No se puede crear el tablero. Contenedor={(contenedorMatriz != null)}, Prefab={(prefabCuadro != null)}");
+    //         return;
+    //     }
+    //     Debug.Log($"Configurando tablero con {listaFichas.Count} fichas.");
+
+    //     foreach (Transform child in contenedorMatriz)
+    //     {
+    //         Destroy(child.gameObject);
+    //     }
+
+    //     bloqueandoClics = false;
+    //     primeraFichaLocal = null;
+    //     turnoMaquinaActivo = false;
+    //     memoriaMaquina.Clear();
+    //     parejasEncontradas = 0;
+    //     parejasJugadorX = 0;
+    //     parejasJugadorY = 0;
+    //     totalParejasDelNivel = listaFichas.Count / 2;
+
+    //     if (ControladorJuego.Instance != null && !ControladorJuego.Instance.esModoMultijugador)
+    //     {
+    //         ControladorJuego.Instance.puntosJugadorX = 0;
+    //         ControladorJuego.Instance.puntosJugadorY = 0;
+    //         if (ControladorJuego.Instance.textoPuntajeX != null)
+    //             ControladorJuego.Instance.textoPuntajeX.text = "Pts 0";
+    //         if (ControladorJuego.Instance.textoPuntajeY != null)
+    //             ControladorJuego.Instance.textoPuntajeY.text = "Pts 0";
+    //     }
+
+    //     if (panelVictoria != null)
+    //         panelVictoria.SetActive(false);
+    //     if (panelVictoriaIndividual != null)
+    //         panelVictoriaIndividual.SetActive(false);
+
+    //     for (int i = 0; i < listaFichas.Count; i++)
+    //     {
+    //         var ficha = listaFichas[i];
+    //         if (ficha.id == 0 && ficha.fichaid != 0) ficha.id = ficha.fichaid;
+    //         if (string.IsNullOrEmpty(ficha.audio)) ficha.audio = ficha.ruta_audio;
+    //         GameObject nuevoCuadro = Instantiate(prefabCuadro, contenedorMatriz);
+    //         nuevoCuadro.transform.localScale = Vector3.one;
+
+    //         ControladorFicha controladorFicha = nuevoCuadro.GetComponent<ControladorFicha>();
+    //         if (controladorFicha != null)
+    //         {
+    //             // Configura la ficha pasándole el índice que viene de la base de datos/servidor
+    //             controladorFicha.ConfigurarFicha(ficha.id, ficha.texto, ficha.audio, ficha.traduccion, ficha.indice_posicion);
+
+    //             // 🔍 IMPRESIÓN DE DEPURACIÓN: Vamos a ver en consola si el índice se asignó bien
+    //             Debug.Log($"📌 Ficha instanciada -> Texto: {ficha.texto} | IndicePosicion asignado: {ficha.indice_posicion}");
+    //         }
+    //     }
+    //     ActualizarTextoTurno();
+    // }
     public void FichaSeleccionada(ControladorFicha ficha)
     {
         if (bloqueandoClics || ficha == null) return;
@@ -596,7 +660,7 @@ public class GestorTablero : MonoBehaviour
         if (panelVictoria != null) panelVictoria.SetActive(false);
         if (panelVictoriaIndividual != null) panelVictoriaIndividual.SetActive(false);
         if (panelJuego != null) panelJuego.SetActive(false);
-        if (panelLobby != null) panelLobby.SetActive(true);
+      //  if (panelLobby != null) panelLobby.SetActive(true);
     }
 
     // 🌟 Método requerido por ControladorModoSolo, ControladorInvitaciones y ControladorModoPareja

@@ -12,7 +12,11 @@ public class ControlLogin : MonoBehaviour
     public TMP_InputField campoUsuario;
     public TMP_InputField campoPassword;
     public GameObject panelLogin;
-    public GameObject lobbyJuego;
+    // public GameObject lobbyJuego;
+
+
+
+    public GameObject panelNivel;
 
     public GameObject sistemaLuciernagas; // Arrastra el objeto "luciernagas" aquí en el Inspector
 
@@ -121,26 +125,73 @@ public class ControlLogin : MonoBehaviour
         }
     }
 
-   public void EntrarAlJuego(string id_player)
+ 
+ 
+public void EntrarAlJuego(string id_player)
 {
-    // Evita que un doble clic o doble respuesta dispare el flujo dos veces
     if (yaEntroAlJuego) return;
     yaEntroAlJuego = true;
 
     panelLogin.SetActive(false); 
-    lobbyJuego.SetActive(true);  
+    panelNivel.SetActive(true);
 
-    GameObject gestorLobby = GameObject.Find("Gestor_Lobby");
-    if (gestorLobby != null)
+    Debug.Log($"<color=cyan>Entrando al juego con ID recibido:</color> '{id_player}'");
+
+    // 1. Asegurar la instancia de forma absoluta en este preciso instante
+    if (ControladorJuego.Instance == null)
     {
-        gestorLobby.SetActive(true);
-        Debug.Log("<color=yellow>Gestor Lobby despertado después del Login.</color>");
+        ControladorJuego objExistente = GameObject.FindFirstObjectByType<ControladorJuego>();
+        if (objExistente != null)
+        {
+            ControladorJuego.Instance = objExistente;
+        }
+        else
+        {
+            // Si por alguna razón no existe en la escena, lo creamos dinámicamente para que el socket funcione sí o sí
+            GameObject nuevoGestor = new GameObject("ControladorJuego_Autogenerado");
+            ControladorJuego nuevoControlador = nuevoGestor.AddComponent<ControladorJuego>();
+            ControladorJuego.Instance = nuevoControlador;
+            DontDestroyOnLoad(nuevoGestor);
+            Debug.LogWarning("[Sistema] Se autogeneró ControladorJuego porque no estaba en la escena.");
+        }
     }
 
+    // 2. Conectar el socket con total seguridad
     if (ControladorJuego.Instance != null)
     {
-        Debug.Log($"<color=cyan>Conectando socket con ID real:</color> {id_player}");
         ControladorJuego.Instance.ConfigurarSocket(id_player);
     }
 }
+
+
+
+
+
+    //    public void EntrarAlJuego(string id_player)
+    //         {
+    //             // Evita que un doble clic o doble respuesta dispare el flujo dos veces
+    //               Debug.Log("<color=yellow>Gestor Lobby despertado después del Login.</color>");
+    //             if (yaEntroAlJuego) return;
+    //             yaEntroAlJuego = true;
+
+    //             panelLogin.SetActive(false); 
+    //             panelNivel.SetActive(true);
+
+
+    // //edgar
+    //             // GameObject gestorLobby = GameObject.Find("Gestor_Lobby");
+    //             // if (gestorLobby != null)
+    //             // {
+    //             //     gestorLobby.SetActive(true);
+
+    //             //     Debug.Log("<color=yellow>Gestor Lobby despertado después del Login.</color>");
+    //             // }
+
+    //             if (ControladorJuego.Instance != null)
+    //             {
+    //                 Debug.Log($"<color=cyan>Conectando socket con ID real:</color> {id_player}");
+    //                 ControladorJuego.Instance.ConfigurarSocket(id_player);
+    //             }
+
+    //         }
 }

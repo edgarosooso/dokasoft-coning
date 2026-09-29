@@ -16,6 +16,8 @@ using SocketIOClient.Newtonsoft.Json;
 
 public class ControladorJuego : MonoBehaviour
 {
+
+    public bool estaConectadoAlSocket = false;
     public static ControladorJuego Instance;
 
     [Header("panel ensayo")]
@@ -67,7 +69,6 @@ public class ControladorJuego : MonoBehaviour
 
     [Header("Paneles de Interfaz")]
     public GameObject Panel_Login;
-    public GameObject Panel_Lobby;
     public GameObject Panel_Juego;
 
     [Header("Referencias del Lobby Multijugador")]
@@ -96,15 +97,12 @@ public class ControladorJuego : MonoBehaviour
 
     void Awake()
     {
-        if (Instance == null)
+        // Forzamos la asignación estática de inmediato al despertar
+        Instance = this;
+
+        if (gameObject.transform.parent == null)
         {
-            Instance = this;
             DontDestroyOnLoad(gameObject);
-        }
-        else if (Instance != this)
-        {
-            Destroy(gameObject);
-            return;
         }
 
         Application.runInBackground = true;
@@ -259,15 +257,21 @@ public class ControladorJuego : MonoBehaviour
     }
 
 
-
     public void ConfigurarSocket(string idPlayerRecibido)
     {
+        UnityEngine.Debug.Log("[Gestor] Intentando configurar socket con ID: " + idPlayerRecibido);
+
         if (string.IsNullOrEmpty(idPlayerRecibido) || idPlayerRecibido == "0") return;
+
+        // Reseteamos el estado al intentar una nueva conexión
+        estaConectadoAlSocket = false;
 
 #if UNITY_WEBGL && !UNITY_EDITOR
     string urlWebGL = "https://dokasoft.com";
     string pathWebGL = "/coning/socket.io";
     JS_ConectarSocket(urlWebGL, pathWebGL, idPlayerRecibido);
+    // Nota: Para WebGL, si manejas la conexión por JS, puedes marcar estaConectadoAlSocket = true 
+    // cuando recibas el evento de conexión desde tu script de reenvío en JS.
 #else
         if (socket != null)
         {
@@ -286,29 +290,21 @@ public class ControladorJuego : MonoBehaviour
         }
         });
 
-        // Forzamos un log aquí mismo para confirmar que entró al código de C#
         UnityEngine.Debug.Log("[Socket C#] Configurando cliente nativo para APK/Editor...");
 
         socket.OnConnected += (sender, e) =>
         {
             UnityEngine.Debug.Log("[Socket C#] ¡Conectado al servidor con éxito!");
 
-            // Llamamos directamente a las escuchas aquí adentro
-
+            // Marcamos la bandera en true al establecerse la conexión real
+            estaConectadoAlSocket = true;
 
             socket.OnUnityThread("actualizar_lista_jugadores", (response) =>
             {
                 UnityEngine.Debug.Log("[Socket C#] Evento recibido: actualizar_lista_jugadores");
-
-                // Obtenemos el texto JSON puro directamente del payload del socket
                 string jsonString = response.GetValue().ToString();
-
-                // Se lo pasamos a tu método central para que pinte los jugadores
                 ProcesarActualizarListaJugadores(jsonString);
             });
-
-
-
 
             socket.OnUnityThread("iniciar_partida", (response) =>
             {
@@ -320,6 +316,72 @@ public class ControladorJuego : MonoBehaviour
         socket.Connect();
 #endif
     }
+
+
+
+    //     public void ConfigurarSocket(string idPlayerRecibido)
+    //     {
+
+    //         UnityEngine.Debug.Log("[Gestor] Intentando configurar socket con ID: " + idPlayerRecibido);
+
+    //         if (string.IsNullOrEmpty(idPlayerRecibido) || idPlayerRecibido == "0") return;
+
+    // #if UNITY_WEBGL && !UNITY_EDITOR
+    //     string urlWebGL = "https://dokasoft.com";
+    //     string pathWebGL = "/coning/socket.io";
+    //     JS_ConectarSocket(urlWebGL, pathWebGL, idPlayerRecibido);
+    // #else
+    //         if (socket != null)
+    //         {
+    //             try { socket.Disconnect(); socket.Dispose(); } catch { }
+    //             socket = null;
+    //         }
+
+    //         var uri = new Uri("http://dokasoft.com:3010");
+    //         socket = new SocketIOUnity(uri, new SocketIOOptions
+    //         {
+    //             EIO = EngineIO.V3,
+    //             Transport = SocketIOClient.Transport.TransportProtocol.WebSocket,
+    //             Query = new Dictionary<string, string>
+    //         {
+    //             { "id_player", idPlayerRecibido }
+    //         }
+    //         });
+
+    //         // Forzamos un log aquí mismo para confirmar que entró al código de C#
+    //         UnityEngine.Debug.Log("[Socket C#] Configurando cliente nativo para APK/Editor...");
+
+    //         socket.OnConnected += (sender, e) =>
+    //         {
+    //             UnityEngine.Debug.Log("[Socket C#] ¡Conectado al servidor con éxito!");
+
+    //             // Llamamos directamente a las escuchas aquí adentro
+
+
+    //             socket.OnUnityThread("actualizar_lista_jugadores", (response) =>
+    //             {
+    //                 UnityEngine.Debug.Log("[Socket C#] Evento recibido: actualizar_lista_jugadores");
+
+    //                 // Obtenemos el texto JSON puro directamente del payload del socket
+    //                 string jsonString = response.GetValue().ToString();
+
+    //                 // Se lo pasamos a tu método central para que pinte los jugadores
+    //                 ProcesarActualizarListaJugadores(jsonString);
+    //             });
+
+
+
+
+    //             socket.OnUnityThread("iniciar_partida", (response) =>
+    //             {
+    //                 UnityEngine.Debug.Log("[Socket C#] Evento recibido: iniciar_partida -> " + response);
+    //                 ProcesarIniciarPartida(response != null ? response.ToString() : "");
+    //             });
+    //         };
+
+    //         socket.Connect();
+    // #endif
+    //     }
 
 
 
@@ -341,29 +403,52 @@ public class ControladorJuego : MonoBehaviour
 #endif
     }
 
-    // Métodos centrales de procesamiento compartidos (Editor y WebGL)
+
     public void ProcesarActualizarListaJugadores(string rawJson)
     {
         try
         {
             List<DatosJugadorLobby> jugadores = null;
 
+            if (string.IsNullOrEmpty(rawJson)) return;
+
             try
             {
+                // Intento 1: Como lista directa
                 jugadores = Newtonsoft.Json.JsonConvert.DeserializeObject<List<DatosJugadorLobby>>(rawJson);
             }
             catch
             {
-                var tokenArray = Newtonsoft.Json.Linq.JArray.Parse(rawJson);
-                if (tokenArray.Count > 0)
+                try
                 {
-                    jugadores = tokenArray[0].ToObject<List<DatosJugadorLobby>>();
+                    // Intento 2: Como un JToken genérico para evaluar si es array u objeto
+                    var token = Newtonsoft.Json.Linq.JToken.Parse(rawJson);
+                    if (token.Type == Newtonsoft.Json.Linq.JTokenType.Array)
+                    {
+                        jugadores = token.ToObject<List<DatosJugadorLobby>>();
+                    }
+                    else if (token.Type == Newtonsoft.Json.Linq.JTokenType.Object)
+                    {
+                        var unJugador = token.ToObject<DatosJugadorLobby>();
+                        if (unJugador != null)
+                        {
+                            jugadores = new List<DatosJugadorLobby> { unJugador };
+                        }
+                    }
+                }
+                catch (System.Exception exInner)
+                {
+                    Debug.LogWarning("No se pudo parsear como estructura estándar: " + exInner.Message);
                 }
             }
 
-            if (jugadores != null)
+            if (jugadores != null && jugadores.Count > 0)
             {
                 ActualizarListaVisual(jugadores);
+            }
+            else
+            {
+                Debug.LogWarning("La lista de jugadores llegó vacía o nula.");
             }
         }
         catch (System.Exception e)
@@ -371,6 +456,37 @@ public class ControladorJuego : MonoBehaviour
             Debug.LogError("Error al procesar 'actualizar_lista_jugadores': " + e.Message);
         }
     }
+
+    // Métodos centrales de procesamiento compartidos (Editor y WebGL)
+    // // // public void ProcesarActualizarListaJugadores(string rawJson)
+    // // // {
+    // // //     try
+    // // //     {
+    // // //         List<DatosJugadorLobby> jugadores = null;
+
+    // // //         try
+    // // //         {
+    // // //             jugadores = Newtonsoft.Json.JsonConvert.DeserializeObject<List<DatosJugadorLobby>>(rawJson);
+    // // //         }
+    // // //         catch
+    // // //         {
+    // // //             var tokenArray = Newtonsoft.Json.Linq.JArray.Parse(rawJson);
+    // // //             if (tokenArray.Count > 0)
+    // // //             {
+    // // //                 jugadores = tokenArray[0].ToObject<List<DatosJugadorLobby>>();
+    // // //             }
+    // // //         }
+
+    // // //         if (jugadores != null)
+    // // //         {
+    // // //             ActualizarListaVisual(jugadores);
+    // // //         }
+    // // //     }
+    // // //     catch (System.Exception e)
+    // // //     {
+    // // //         Debug.LogError("Error al procesar 'actualizar_lista_jugadores': " + e.Message);
+    // // //     }
+    // // // }
 
     public void ProcesarIniciarPartida(string rawJson)
     {
@@ -452,7 +568,7 @@ public class ControladorJuego : MonoBehaviour
                 }
                 ActualizarVisibilidadMarcadores();
 
-                if (Panel_Lobby != null) Panel_Lobby.SetActive(false);
+
                 if (Panel_Login != null) Panel_Login.SetActive(false);
                 if (Panel_Juego != null) Panel_Juego.SetActive(true);
 
@@ -478,44 +594,228 @@ public class ControladorJuego : MonoBehaviour
     void MostrarSoloLogin()
     {
         if (Panel_Login != null) Panel_Login.SetActive(true);
-        if (Panel_Lobby != null) Panel_Lobby.SetActive(false);
+
     }
 
+    // // // public void ActualizarListaVisual(List<DatosJugadorLobby> jugadores)
+    // // // {
+    // // //     foreach (Transform child in contenedorDeJugadores)
+    // // //     {
+    // // //         Destroy(child.gameObject);
+    // // //     }
+
+    // // //     foreach (DatosJugadorLobby jugador in jugadores)
+    // // //     {
+    // // //         if (jugador.id_player == id_player ||
+    // // //             (!string.IsNullOrEmpty(nombre_jugador) &&
+    // // //              string.Equals(jugador.username, nombre_jugador, System.StringComparison.OrdinalIgnoreCase)))
+    // // //         {
+    // // //             if (!string.IsNullOrEmpty(jugador.username) && !string.IsNullOrEmpty(jugador.avatar_url))
+    // // //                 avataresPorJugador[jugador.username] = jugador.avatar_url;
+    // // //             continue;
+    // // //         }
+
+    // // //         avataresPorJugador[jugador.username] = jugador.avatar_url;
+    // // //         GameObject nuevoItem = Instantiate(prefabItemJugador, contenedorDeJugadores);
+    // // //         jugadorPrefab item = nuevoItem.GetComponent<jugadorPrefab>();
+    // // //         if (item != null)
+    // // //         {
+    // // //             item.Inicializar(jugador.id_player.ToString(), jugador.username, jugador.avatar_url);
+    // // //         }
+    // // //     }
+
+
+    // // //     // <--- Forzamos el redibujo aquí afuera del foreach --->
+    // // //     Canvas.ForceUpdateCanvases();
+    // // //     if (contenedorDeJugadores != null)
+    // // //     {
+    // // //         UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(contenedorDeJugadores.GetComponent<RectTransform>());
+    // // //     }
+    // // // }
+
+    // // // public void ActualizarListaVisual(List<DatosJugadorLobby> jugadores)
+    // // // {
+    // // //     // Validar contenedor principal
+    // // //     if (contenedorDeJugadores == null)
+    // // //     {
+    // // //         Debug.LogError("[UI] 'contenedorDeJugadores' no está asignado en el Inspector.");
+    // // //         return;
+    // // //     }
+
+    // // //     // Validar diccionario de avatares por si acaso no fue inicializado en Awake o Start
+    // // //     if (avataresPorJugador == null)
+    // // //     {
+    // // //         avataresPorJugador = new System.Collections.Generic.Dictionary<string, string>();
+    // // //     }
+
+    // // //     // Limpiar hijos anteriores de forma segura
+    // // //     foreach (Transform child in contenedorDeJugadores)
+    // // //     {
+    // // //         if (child != null && child.gameObject != null)
+    // // //         {
+    // // //             Destroy(child.gameObject);
+    // // //         }
+    // // //     }
+
+    // // //     if (jugadores == null) return;
+
+    // // //     foreach (DatosJugadorLobby jugador in jugadores)
+    // // //     {
+    // // //         if (jugador == null) continue;
+
+    // // //         if (jugador.id_player == id_player ||
+    // // //             (!string.IsNullOrEmpty(nombre_jugador) &&
+    // // //              string.Equals(jugador.username, nombre_jugador, System.StringComparison.OrdinalIgnoreCase)))
+    // // //         {
+    // // //             if (!string.IsNullOrEmpty(jugador.username) && !string.IsNullOrEmpty(jugador.avatar_url))
+    // // //                 avataresPorJugador[jugador.username] = jugador.avatar_url;
+    // // //             continue;
+    // // //         }
+
+    // // //         if (!string.IsNullOrEmpty(jugador.username) && !string.IsNullOrEmpty(jugador.avatar_url))
+    // // //             avataresPorJugador[jugador.username] = jugador.avatar_url;
+
+    // // //         // Validar prefab antes de instanciar
+    // // //         if (prefabItemJugador == null)
+    // // //         {
+    // // //             Debug.LogError("[UI] 'prefabItemJugador' no está asignado en el Inspector.");
+    // // //             continue;
+    // // //         }
+
+    // // //         GameObject nuevoItem = Instantiate(prefabItemJugador, contenedorDeJugadores);
+    // // //         if (nuevoItem != null)
+    // // //         {
+    // // //             jugadorPrefab item = nuevoItem.GetComponent<jugadorPrefab>();
+    // // //             if (item != null)
+    // // //             {
+    // // //                 string idStr = jugador.id_player != null ? jugador.id_player.ToString() : "";
+    // // //                 item.Inicializar(idStr, jugador.username, jugador.avatar_url);
+    // // //             }
+    // // //             else
+    // // //             {
+    // // //                 Debug.LogWarning("[UI] El prefab instanciado no contiene el componente 'jugadorPrefab'.");
+    // // //             }
+    // // //         }
+    // // //     }
+
+    // // //     // Redibujo seguro de la UI
+    // // //     Canvas.ForceUpdateCanvases();
+    // // //     RectTransform rectTransform = contenedorDeJugadores.GetComponent<RectTransform>();
+    // // //     if (rectTransform != null)
+    // // //     {
+    // // //         UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(rectTransform);
+    // // //     }
+    // // // }
+
+
+
     public void ActualizarListaVisual(List<DatosJugadorLobby> jugadores)
+{
+    // Respaldo automático del contenedor
+    if (contenedorDeJugadores == null)
     {
-        foreach (Transform child in contenedorDeJugadores)
+        foreach (var obj in Resources.FindObjectsOfTypeAll<RectTransform>())
+        {
+            if (obj.name == "ContenedorJugadores")
+            {
+                contenedorDeJugadores = obj.transform;
+                break;
+            }
+        }
+    }
+
+    // Respaldo automático del prefab del jugador
+    if (prefabItemJugador == null)
+    {
+        // Intenta cargarlo desde una carpeta Resources si la tienes, o búscalo
+        prefabItemJugador = Resources.Load<GameObject>("ItemJugador"); // Cambia "ItemJugador" por el nombre exacto de tu prefab si es diferente
+        
+        if (prefabItemJugador == null)
+        {
+            // Opcional: buscar entre todos los objetos cargados si estuviera en memoria
+            foreach (var g in Resources.FindObjectsOfTypeAll<GameObject>())
+            {
+                if (g.name == "ItemJugador" && g.scene.IsValid() == false) // Es un prefab en assets
+                {
+                    prefabItemJugador = g;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Validar contenedor principal
+    if (contenedorDeJugadores == null)
+    {
+        Debug.LogError("[UI] 'contenedorDeJugadores' no está asignado ni se pudo encontrar en la escena.");
+        return;
+    }
+
+    // Validar prefab
+    if (prefabItemJugador == null)
+    {
+        Debug.LogError("[UI] 'prefabItemJugador' no está asignado ni se pudo encontrar automáticamente.");
+        return;
+    }
+
+    // Validar diccionario de avatares por si acaso no fue inicializado en Awake o Start
+    if (avataresPorJugador == null)
+    {
+        avataresPorJugador = new System.Collections.Generic.Dictionary<string, string>();
+    }
+
+    // Limpiar hijos anteriores de forma segura
+    foreach (Transform child in contenedorDeJugadores)
+    {
+        if (child != null && child.gameObject != null)
         {
             Destroy(child.gameObject);
         }
+    }
 
-        foreach (DatosJugadorLobby jugador in jugadores)
+    if (jugadores == null) return;
+
+    foreach (DatosJugadorLobby jugador in jugadores)
+    {
+        if (jugador == null) continue;
+
+        if (jugador.id_player == id_player ||
+            (!string.IsNullOrEmpty(nombre_jugador) &&
+             string.Equals(jugador.username, nombre_jugador, System.StringComparison.OrdinalIgnoreCase)))
         {
-            if (jugador.id_player == id_player ||
-                (!string.IsNullOrEmpty(nombre_jugador) &&
-                 string.Equals(jugador.username, nombre_jugador, System.StringComparison.OrdinalIgnoreCase)))
-            {
-                if (!string.IsNullOrEmpty(jugador.username) && !string.IsNullOrEmpty(jugador.avatar_url))
-                    avataresPorJugador[jugador.username] = jugador.avatar_url;
-                continue;
-            }
+            if (!string.IsNullOrEmpty(jugador.username) && !string.IsNullOrEmpty(jugador.avatar_url))
+                avataresPorJugador[jugador.username] = jugador.avatar_url;
+            continue;
+        }
 
+        if (!string.IsNullOrEmpty(jugador.username) && !string.IsNullOrEmpty(jugador.avatar_url))
             avataresPorJugador[jugador.username] = jugador.avatar_url;
-            GameObject nuevoItem = Instantiate(prefabItemJugador, contenedorDeJugadores);
+
+        GameObject nuevoItem = Instantiate(prefabItemJugador, contenedorDeJugadores);
+        if (nuevoItem != null)
+        {
             jugadorPrefab item = nuevoItem.GetComponent<jugadorPrefab>();
             if (item != null)
             {
-                item.Inicializar(jugador.id_player.ToString(), jugador.username, jugador.avatar_url);
+                string idStr = jugador.id_player != null ? jugador.id_player.ToString() : "";
+                item.Inicializar(idStr, jugador.username, jugador.avatar_url);
+            }
+            else
+            {
+                Debug.LogWarning("[UI] El prefab instanciado no contiene el componente 'jugadorPrefab'.");
             }
         }
-
-
-        // <--- Forzamos el redibujo aquí afuera del foreach --->
-        Canvas.ForceUpdateCanvases();
-        if (contenedorDeJugadores != null)
-        {
-            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(contenedorDeJugadores.GetComponent<RectTransform>());
-        }
     }
+
+    // Redibujo seguro de la UI
+    Canvas.ForceUpdateCanvases();
+    RectTransform rectTransform = contenedorDeJugadores.GetComponent<RectTransform>();
+    if (rectTransform != null)
+    {
+        UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(rectTransform);
+    }
+}
+
 
     public void InvitarJugador(string idReceptorDeseado)
     {

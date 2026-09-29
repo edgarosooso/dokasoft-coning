@@ -11,7 +11,6 @@ public class ControladorInvitaciones : MonoBehaviour
     public TextMeshProUGUI textoMensaje;             // Arrastra aquí "TextoMensaje"
 
     [Header("UI de Cambio de Panel al Jugar")]
-    public GameObject panelLobby;
     public GameObject panelJuego;
     public GestorTablero gestorTablero;
 

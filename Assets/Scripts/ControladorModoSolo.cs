@@ -89,7 +89,8 @@ public class ControladorModoSolo : MonoBehaviour
         }
     }
 
-    public void SolicitarModoIndividual()
+
+public void SolicitarModoIndividual()
     {
         int nivelSeleccionado = PlayerPrefs.GetInt(MenuNiveles.ClaveNivelSeleccionado,
             gestorTablero != null ? gestorTablero.nivelActual : 1);
@@ -104,6 +105,14 @@ public class ControladorModoSolo : MonoBehaviour
             ControladorJuego.Instance.modoSoloSolicitado = true;
             ControladorJuego.Instance.modoMaquina = false;
         }
+
+        // --- APAGAR LOBBY Y ACTIVAR JUEGO ---
+        if (panelLobby != null)
+            panelLobby.SetActive(false);
+            
+        if (panelJuego != null)
+            panelJuego.SetActive(true);
+        // ------------------------------------
 
         Debug.Log("Enviando petición 'iniciar_modo_solo' para el nivel seleccionado: " + nivelSeleccionado);
 
@@ -124,4 +133,6 @@ public class ControladorModoSolo : MonoBehaviour
             Debug.LogError("El socket no está inicializado o conectado en ControladorJuego.");
         }
     }
+
+
 }
